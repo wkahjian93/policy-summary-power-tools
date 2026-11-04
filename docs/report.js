@@ -44,7 +44,7 @@
   }
   const catVal = (x, PS) => x.policies ? (x.total || !x.missing ? esc(PS.rm(x.total)) : '<span class="rp-none">Not stated</span>') : '<span class="rp-zero">RM0</span>';
 
-  function page1(c, s, agent, PS, pages) {
+  function page1(c, s, agent, PS, pages, opts) {
     const C = s.cats, name = c.client.name || 'Client';
     const facts = [c.client.age ? 'Age ' + esc(c.client.age) : '', s.policyCount + ' polic' + (s.policyCount === 1 ? 'y' : 'ies') + ' in force',
       s.insurers.length + ' insurer' + (s.insurers.length === 1 ? '' : 's')].filter(Boolean).join(' · ');
@@ -77,7 +77,7 @@
       </div>
       ${gaps}
       <section class="rp-prem"><div><span>Total premium</span><b>${PS.rm(s.premium.annual)}<small> / year</small></b><em>about ${PS.rm(Math.round(s.premium.annual / 12))} a month${s.premium.missing ? ' · ' + s.premium.missing + ' not stated' : ''}</em></div><div class="rp-chips">${chips}</div></section>
-      ${excl}
+      ${excl}${opts && opts.incomplete ? `<p class="rp-excl">Some details were not available in the documents provided and are shown as "Not stated" or left out of the totals. Your adviser will update this summary when they are confirmed.</p>` : ""}
       ${footer(agent)}</div>`;
   }
 
@@ -129,11 +129,11 @@
       <table class="rp-ben">${ben}</table>${extra ? `<p class="rp-pol-x">${extra}</p>` : ''}</section>`;
   }
 
-  function build(c, agent, PS) {
+  function build(c, agent, PS, opts) {
     const s = PS.summarise(c);
     const tmpDetail = detailPages(c, agent, PS, 3, 0).length;
     const pages = 2 + tmpDetail;
-    return [page1(c, s, agent, PS, pages), matrix(c, s, agent, PS, pages)].concat(detailPages(c, agent, PS, 3, pages));
+    return [page1(c, s, agent, PS, pages, opts), matrix(c, s, agent, PS, pages)].concat(detailPages(c, agent, PS, 3, pages));
   }
 
   /* render pages to a PDF Blob */

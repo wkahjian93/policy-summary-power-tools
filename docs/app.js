@@ -112,7 +112,7 @@
           <button class="btn" id="key">${ICONS.pen}Key in<br>a policy</button>
         </div>
         <input type="file" id="file" accept="image/*" multiple hidden>
-        ${checks.length ? `<div class="checks"><b>${checks.length} item${checks.length > 1 ? 's' : ''} to confirm</b> before the PDF can be made. Tap a policy marked <span class="pill warn">check</span>.</div>` : ''}
+        ${checks.length ? `<div class="checks"><b>${checks.length} item${checks.length > 1 ? 's' : ''} to confirm</b> before the summary is complete. Tap a policy marked <span class="pill warn">check</span>.</div>` : ''}
         <h2 class="muted" style="margin:6px 2px 8px;font-weight:600">POLICIES (${c.policies.length})</h2>
         ${c.policies.length ? c.policies.map(p => {
           const n = PS.pendingChecks({policies: [p]}).length, r = PS.policyRow(p), out = p.status !== 'inforce' && p.status !== 'unknown';
@@ -374,11 +374,11 @@
   /* ---------- summary + PDF ---------- */
   function summary(c) {
     const checks = PS.pendingChecks(c);
-    const pages = Report.build(c, agent(), PS);
+    const pages = Report.build(c, agent(), PS, {incomplete: checks.length > 0});
     const fit = Math.min(1, (Math.min(innerWidth, 560) - 28) / 794);
     app.innerHTML = bar('Summary · ' + (c.client.name || ''), '#/case/' + c.id) + `
       <div class="wrap">
-        ${checks.length ? `<div class="checks"><b>${checks.length} item${checks.length > 1 ? 's' : ''} still need confirming</b>, so the PDF is locked. The preview below shows them as "Not stated".<ul>${checks.slice(0, 8).map(k => {
+        ${checks.length ? `<div class="checks"><b>${checks.length} item${checks.length > 1 ? 's' : ''} not confirmed yet.</b> Best to fix them first, but you can still create the PDF: missing amounts show as "Not stated" and are left out of the totals, and amounts read from photos are used as read.<ul>${checks.slice(0, 8).map(k => {
           const p = c.policies.find(x => x.id === k.policyId);
           return `<li><a href="#/case/${c.id}/policy/${p.id}">${esc(p.insurer || 'Policy')}</a>: ${esc(k.why)}</li>`;
         }).join('')}</ul></div>` : ''}
@@ -386,14 +386,17 @@
         <div class="seg" role="group"><button aria-pressed="true" data-v="0">At a glance</button><button aria-pressed="false" data-v="1">Side by side</button><button aria-pressed="false" data-v="2">Details</button></div>
         <div class="pages" id="pages">${pages.map((h, i) => `<div class="pagebox" data-i="${i}" style="width:${Math.round(794 * fit)}px;height:${Math.round(1123 * fit)}px">${h.replace('class="rp-page"', `class="rp-page" style="transform:scale(${fit})"`)}</div>`).join('')}</div>
       </div>
-      <div class="dock"><button class="btn primary" id="mk" ${checks.length ? 'disabled' : ''}>Create PDF</button></div>`;
+      <div class="dock"><button class="btn primary" id="mk">${checks.length ? 'Create PDF anyway' : 'Create PDF'}</button></div>`;
     $$('.seg button').forEach(b => b.onclick = () => {
       $$('.seg button').forEach(x => x.setAttribute('aria-pressed', x === b));
       const target = $$('.pagebox')[Math.min(+b.dataset.v, pages.length - 1)];
       scrollTo({top: target.getBoundingClientRect().top + scrollY - 70, behavior: 'smooth'});
     });
     const sn = $('#setN'); if (sn) sn.onclick = e => { e.preventDefault(); openSettings(); };
-    $('#mk').onclick = () => makePDF(c, pages);
+    $('#mk').onclick = async () => {
+      if (checks.length && !(await confirmBox('Create PDF with incomplete info?', checks.length + ' item' + (checks.length > 1 ? 's are' : ' is') + ' not confirmed. Missing amounts show as <b>Not stated</b> and are left out of the totals. Page 1 tells the client some details were not available.', 'Create anyway'))) return;
+      makePDF(c, pages);
+    };
   }
 
   async function makePDF(c, pages) {

@@ -39,7 +39,7 @@ The app recognises 24 Malaysian life and takaful insurers by full legal name, sh
 - Client details stay **on your phone only**. Photos are sent to the AI once, read and discarded (OpenAI `store:false`). Nothing is saved on the server.
 - Policy numbers are cut to the last 4 digits. IC numbers are never kept.
 - Before deleting a client or policy, and before sending, the app asks you to confirm.
-- The PDF can't be created while any item still needs confirming.
+- If some items are still unconfirmed (e.g. cash value not shown), you can still tap **Create PDF anyway**. The app asks you to confirm first. Missing amounts show as "Not stated" and are left out of the totals, and page 1 tells the client some details were not available.
 - Every PDF has a disclaimer: it's a discussion summary from the client's documents, not a policy contract, quotation or recommendation.
 
 ## For maintenance
