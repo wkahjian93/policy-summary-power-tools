@@ -1,0 +1,94 @@
+/* A4 report pages: 794 x 1123 px. Used on screen (scaled) and for the PDF. */
+.rp-page{width:794px;height:1123px;position:relative;overflow:hidden;background:#fff;color:#1A2233;
+  font:400 13px/1.45 Inter,system-ui,"Segoe UI",Arial,sans-serif;padding:40px 48px 0;box-sizing:border-box}
+.rp-page *{box-sizing:border-box}
+.rp-head{display:flex;align-items:center;justify-content:space-between;padding-bottom:14px;border-bottom:1px solid #E4E1D8}
+.rp-logo{height:44px;width:auto}
+.rp-head-r{text-align:right}
+.rp-head-r b{display:block;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#1F3A68}
+.rp-head-r span{font-size:11px;color:#8A8F9C}
+.rp-client{margin:22px 0 18px}
+.rp-client span{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#B08A2E;font-weight:600}
+.rp-client h1{font:600 38px/1.1 Fraunces,Georgia,serif;margin:4px 0 6px;color:#14213D}
+.rp-client h2{font:600 24px/1.2 Fraunces,Georgia,serif;margin:2px 0 0;color:#14213D}
+.rp-client p{margin:0;color:#5B6273;font-size:14px}
+.rp-client.small{margin:18px 0 14px}
+
+.rp-hero{display:grid;grid-template-columns:1.25fr 1fr;gap:0;border-radius:18px;overflow:hidden;background:#14213D;color:#fff}
+.rp-hero-main{padding:24px 26px;background:linear-gradient(135deg,#1F3A68,#14213D)}
+.rp-hero span{display:block;font-size:12px;color:#C9D2E3}
+.rp-hero-main b{display:block;font:600 46px/1.1 Fraunces,Georgia,serif;color:#F2C46B;margin:8px 0 6px;letter-spacing:-.01em}
+.rp-hero em{font-style:normal;font-size:11.5px;color:#AEB9CF}
+.rp-hero em em{color:#F2C46B}
+.rp-hero-side{display:grid;grid-template-rows:1fr 1fr;border-left:1px solid rgba(255,255,255,.12)}
+.rp-hero-side div{padding:16px 22px}
+.rp-hero-side div+div{border-top:1px solid rgba(255,255,255,.12)}
+.rp-hero-side b{display:block;font:600 27px/1.15 Fraunces,Georgia,serif;color:#fff;margin:4px 0 2px}
+.rp-none{color:#D9A23B;font-size:.6em;font-family:Inter,Arial,sans-serif;font-weight:600}
+.rp-zero{color:#9AA1B0}
+.rp-hero .rp-zero{color:#7F8AA3}
+
+.rp-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px}
+.rp-tile{border:1px solid #E7E3D9;border-radius:14px;padding:13px 14px 12px;background:#FBFAF6}
+.rp-tile-top{display:flex;align-items:center;gap:8px;font-size:11.5px;color:#5B6273;font-weight:500;min-height:24px}
+.rp-tile-top svg{flex:none}
+.rp-tile-v{font:600 23px/1.2 Fraunces,Georgia,serif;color:#14213D;margin:8px 0 3px}
+.rp-tile-v small{font:500 12px Inter,Arial,sans-serif;color:#5B6273;margin-left:2px}
+.rp-tile-s{font-size:10.5px;color:#7A8090;line-height:1.35}
+.rp-tile-s em,.rp-hero-main em em{font-style:normal;color:#C0632C;font-weight:600}
+
+.rp-gap{margin-top:16px;padding:16px 18px;border-radius:14px;background:#F4F1E8}
+.rp-gap h3{margin:0 0 2px;font-size:13px;color:#14213D}
+.rp-gap-note{margin:0 0 10px;font-size:10.5px;color:#7A8090}
+.rp-bar{display:grid;grid-template-columns:110px 1fr 150px;align-items:center;gap:12px;margin-top:7px;font-size:12px}
+.rp-bar-l{font-weight:600;color:#14213D}
+.rp-bar-t{height:10px;border-radius:6px;background:#E2DDCF;overflow:hidden}
+.rp-bar-t i{display:block;height:100%;border-radius:6px}
+.rp-bar-v{color:#5B6273}
+.rp-bar-v b{color:#14213D;margin-right:4px}
+
+.rp-prem{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-top:14px;padding:14px 18px;border:1px solid #E7E3D9;border-radius:14px}
+.rp-prem>div:first-child>span{display:block;font-size:11px;color:#7A8090;text-transform:uppercase;letter-spacing:.1em}
+.rp-prem b{display:block;font:600 22px/1.2 Fraunces,Georgia,serif;color:#14213D}
+.rp-prem b small{font:500 12px Inter,Arial,sans-serif;color:#5B6273}
+.rp-prem em{font-style:normal;font-size:11px;color:#7A8090}
+.rp-chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;max-width:62%}
+.rp-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;background:#F4F1E8;font-size:11px;color:#3A4152}
+.rp-chip i{display:inline-block;width:8px;height:8px;border-radius:50%}
+.rp-excl{margin:10px 2px 0;font-size:11px;color:#7A8090}
+
+.rp-foot{position:absolute;left:48px;right:48px;bottom:30px;border-top:1px solid #E4E1D8;padding-top:10px;font-size:11px;color:#3A4152}
+.rp-foot p{margin:4px 0 0;font-size:8.6px;line-height:1.4;color:#8A8F9C}
+
+.rp-mx{width:100%;border-collapse:collapse;font-size:11.5px}
+.rp-mx th,.rp-mx td{padding:9px 6px;border-bottom:1px solid #ECE8DE;text-align:right;vertical-align:middle;white-space:nowrap}
+.rp-mx thead th{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#7A8090;font-weight:600;border-bottom:2px solid #14213D}
+.rp-mx thead th:first-child,.rp-mx tbody th,.rp-mx tfoot th{text-align:left}
+.rp-mx tbody th{white-space:normal;width:190px;font-weight:400}
+.rp-mx tbody th i{float:left;width:4px;height:30px;border-radius:2px;margin:1px 8px 0 0}
+.rp-mx tbody th b{display:block;font-size:12px;color:#14213D}
+.rp-mx tbody th span{display:block;font-size:10px;color:#7A8090;line-height:1.3}
+.rp-mx td{color:#14213D;font-weight:500}
+.rp-mx td.rp-dash{color:#C5C9D2}
+.rp-mx sup{color:#C0632C;font-weight:700;margin-left:1px}
+.rp-mx tfoot th,.rp-mx tfoot td{background:#14213D;color:#F2C46B;font-weight:700;font-size:12px;border:0;padding:11px 6px}
+.rp-mx tfoot th{color:#fff;padding-left:12px;border-radius:10px 0 0 10px}
+.rp-mx tfoot td:last-child{border-radius:0 10px 10px 0;padding-right:12px}
+.rp-mx tr.rp-out td,.rp-mx tr.rp-out th b{color:#AEB3BF}
+.rp-key{font-size:10px;color:#7A8090;margin:10px 0 0}
+.rp-key sup{color:#C0632C;font-weight:700}
+
+.rp-pol{border:1px solid #E7E3D9;border-radius:14px;padding:12px 14px;margin-bottom:12px;background:#fff}
+.rp-pol.rp-out{opacity:.55}
+.rp-pol-h{display:flex;gap:10px;align-items:flex-start;margin-bottom:6px}
+.rp-pol-h i{flex:none;width:4px;height:34px;border-radius:2px}
+.rp-pol-h b{display:block;font-size:13px;color:#14213D}
+.rp-pol-h span{display:block;font-size:10.5px;color:#7A8090}
+.rp-ben{width:100%;border-collapse:collapse;font-size:11.5px}
+.rp-ben td{padding:5px 4px;border-top:1px solid #F0ECE3;vertical-align:top}
+.rp-ben td:first-child{width:78px}
+.rp-ben td:nth-child(3){text-align:right;font-weight:600;color:#14213D}
+.rp-ben td:last-child{width:72px;text-align:right;color:#7A8090;font-size:10.5px}
+.rp-ben small{display:block;color:#8A8F9C;font-size:10px}
+.rp-tag{display:inline-block;padding:2px 7px;border-radius:10px;color:#fff;font-size:9.5px;font-weight:600;white-space:nowrap}
+.rp-pol-x{margin:6px 0 0;font-size:11px;color:#3A4152;font-weight:500}
