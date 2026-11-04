@@ -9,7 +9,7 @@
 |---|---|---|
 | Team server | The REDEFINE Form Filler Google server (already live) | Connected, nothing to set up |
 | Team code | The same code you use in Form Filler | Type it into the app on your phone only. Never paste it into chat. |
-| Client documents | Photos or screenshots: policy schedule, contract page, annual statement, benefit illustration, or the insurer's app/portal screen. JPG/PNG/HEIC from the camera or gallery. | Bring them to the meeting |
+| Client documents | PDFs (e-policy, e-statement, illustration) or photos/screenshots: policy schedule, contract page, annual statement, benefit illustration, or the insurer's app/portal screen. JPG/PNG/HEIC from the camera or gallery. | Bring them to the meeting |
 | Your name, title and phone | Typed into Settings | Shown at the bottom of every PDF |
 
 ## Using it (about 5 minutes per client)
@@ -17,6 +17,7 @@
 1. **Open the app** and tap **+ New client summary**. Enter the name as it should appear on the PDF. Age and annual income are optional; adding income turns on the "compared with a guideline" bars.
 2. **Add policies.** Use either button:
    - **Snap / upload policy photos.** Take a photo or pick screenshots, up to 4 at a time. Pages of one policy can go together, and a portal screen listing several policies is fine. Tap **Read with AI**, which usually takes 20–60 seconds. The first time, sign in with your name and the team code.
+   - **Upload policy PDF.** Pick e-policies, e-statements or benefit illustrations saved on the phone (from email, WhatsApp or Files). The app shows each page; the first 4 are picked, and you tap to choose the schedule and benefit pages (up to 12, first 20 pages shown). If the PDF has a password (e-statements often use the client's IC or date of birth), the app asks for it once and doesn't save it.
    - **Key in a policy.** Type it in yourself. This works offline with no AI.
 3. **Confirm the orange items.** Anything the AI couldn't read clearly (a blurred amount, an unknown insurer, a benefit it couldn't place) turns orange. Fix it, or tap **Looks right**. **Missing amounts are never treated as RM0.** They show as "Not stated" until you fill them in.
 4. **See summary & PDF.** You get three views: *At a glance* (the "wow" page), *Side by side* (every policy against every category) and *Details* (every rider).

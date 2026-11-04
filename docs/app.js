@@ -39,6 +39,7 @@
     gear: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-2.6-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.2-2.6l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 2.7-1.1V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.6 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>',
     cam: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M3 8h4l2-3h6l2 3h4v12H3z"/><circle cx="12" cy="13" r="4"/></svg>',
     pen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg>',
+    pdf: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5"/><path d="M9 12h6M9 15h6M9 18h4"/></svg>',
     trash: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>'
   };
   const bar = (title, back, right) => `<header class="bar">${back ? `<a class="ib" href="${back}" aria-label="Back">${ICONS.back}</a>` : ''}<h1>${esc(title)}</h1>${right || ''}</header>`;
@@ -107,11 +108,13 @@
         <div class="card hero"><h2>So far</h2>
           <div class="stat"><div><span>Death</span><b>${PS.rm(s.cats.death.total, {short: true})}</b></div><div><span>CI</span><b>${PS.rm(s.cats.ci.total, {short: true})}</b></div><div><span>Medical/yr</span><b>${s.medical.annual != null ? PS.rm(s.medical.annual, {short: true}) : '—'}</b></div></div>
         </div>
-        <div class="big2" style="margin-bottom:12px">
+        <div class="big2" style="margin-bottom:10px">
           <button class="btn" id="snap">${ICONS.cam}Snap / upload<br>policy photos</button>
-          <button class="btn" id="key">${ICONS.pen}Key in<br>a policy</button>
+          <button class="btn" id="pdfB">${ICONS.pdf}Upload<br>policy PDF</button>
         </div>
+        <button class="btn block" id="key" style="margin-bottom:12px">${ICONS.pen.replace('<svg ', '<svg width="22" height="22" ')}Key in a policy</button>
         <input type="file" id="file" accept="image/*" multiple hidden>
+        <input type="file" id="pdfIn" accept="application/pdf,.pdf" multiple hidden>
         ${checks.length ? `<div class="checks"><b>${checks.length} item${checks.length > 1 ? 's' : ''} to confirm</b> before the summary is complete. Tap a policy marked <span class="pill warn">check</span>.</div>` : ''}
         <h2 class="muted" style="margin:6px 2px 8px;font-weight:600">POLICIES (${c.policies.length})</h2>
         ${c.policies.length ? c.policies.map(p => {
@@ -131,6 +134,8 @@
     $('#key').onclick = () => { location.hash = '#/case/' + c.id + '/policy/new'; };
     $('#snap').onclick = () => $('#file').click();
     $('#file').onchange = e => { const f = [...e.target.files]; e.target.value = ''; if (f.length) readPhotos(c, f); };
+    $('#pdfB').onclick = () => $('#pdfIn').click();
+    $('#pdfIn').onchange = e => { const f = [...e.target.files]; e.target.value = ''; if (f.length) readPhotos(c, f); };
     $('#del').onclick = async () => {
       if (await confirmBox('Delete ' + (c.client.name || 'this client') + '?', 'This removes the client and all ' + c.policies.length + ' policies from this phone. It cannot be undone.', 'Delete', true)) {
         cases = cases.filter(x => x.id !== c.id); saveCases(); location.hash = '#/';
@@ -192,15 +197,82 @@
     rate_limited: 'The AI is busy. Wait a minute and try again.', image_rejected: 'One photo could not be opened. Try a screenshot or a different photo.'
   };
 
+  /* ---------- PDFs: each page becomes an image the AI can read ---------- */
+  const loadScript = src => new Promise((ok, bad) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => bad(new Error(src)); document.head.appendChild(s); });
+  const isPdf = f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name || '');
+  const MAX_PDF_PAGES = 20, MAX_PICK = 12;
+  function askPassword(name, wrong) {
+    return new Promise(done => {
+      const el = sheet(`<h3>${wrong ? 'Wrong password' : 'This PDF has a password'}</h3><p>${esc(name)} is locked. E-statements often use the client's IC number or date of birth. The password is used once on this phone and not saved.</p>
+        <div class="f"><label for="pw">PDF password</label><input id="pw" type="password" autocomplete="off"></div>
+        <div class="row"><button class="btn" data-x>Skip this PDF</button><button class="btn primary" data-ok>Open</button></div>`);
+      $('#pw', el).focus();
+      $('[data-x]', el).onclick = () => done(null);
+      $('[data-ok]', el).onclick = () => done($('#pw', el).value);
+    });
+  }
+  async function pdfPages(file, onPage) {
+    if (!window.pdfjsLib) { await loadScript('vendor/pdf.min.js'); window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js'; }
+    const task = window.pdfjsLib.getDocument({data: new Uint8Array(await file.arrayBuffer())});
+    let skipped = false;
+    task.onPassword = async (update, reason) => {
+      const pw = await askPassword(file.name, reason === 2);
+      if (pw == null) { skipped = true; task.destroy(); } else { sheet('<h3>Opening PDF…</h3><div class="spin"></div>'); update(pw); }
+    };
+    let doc;
+    try { doc = await task.promise; } catch (e) { if (skipped) return {pages: [], skipped: true}; throw {code: 'pdf_unreadable'}; }
+    const n = Math.min(doc.numPages, MAX_PDF_PAGES), pages = [];
+    for (let i = 1; i <= n; i++) {
+      onPage && onPage(i, n);
+      const page = await doc.getPage(i), v1 = page.getViewport({scale: 1});
+      const v = page.getViewport({scale: Math.min(3, 1800 / Math.max(v1.width, v1.height))});
+      const cv = document.createElement('canvas'); cv.width = Math.round(v.width); cv.height = Math.round(v.height);
+      const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height);
+      await page.render({canvasContext: g, viewport: v}).promise;
+      pages.push({blob: await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.88)), label: (doc.numPages > 1 ? 'p' + i : 'PDF'), pdf: true, page: i});
+      page.cleanup();
+    }
+    const total = doc.numPages; doc.destroy();
+    return {pages, total};
+  }
+
   async function readPhotos(c, files) {
     const max = CFG.maxPhotosPerRead || 4;
-    const urls = files.map(f => URL.createObjectURL(f));
-    const el = sheet(`<h3>Read ${files.length} photo${files.length > 1 ? 's' : ''}?</h3>
-      <div class="thumbs">${urls.map(u => `<img src="${u}" alt="">`).join('')}</div>
-      <p>Pages of the same policy can go together. A portal screen listing several policies is fine. ${files.length > max ? `They will be read ${max} at a time.` : ''} Cover the client's IC number if it shows, it is not needed.</p>
+    /* turn photos and PDF pages into one list of images */
+    let items = [];
+    const notes = [];
+    if (files.some(isPdf)) { sheet('<h3>Opening PDF…</h3><div class="spin"></div><p id="pdfMsg" style="text-align:center"></p>'); $('#sheet').dataset.lock = '1'; }
+    for (const f of files) {
+      if (!isPdf(f)) { items.push({blob: f, label: 'Photo', on: true}); continue; }
+      try {
+        const r = await pdfPages(f, (i, n) => { const m = $('#pdfMsg'); if (m) m.textContent = `${f.name}: page ${i} of ${n}`; });
+        if (r.skipped) { notes.push(f.name + ' skipped (locked)'); continue; }
+        if (r.total > MAX_PDF_PAGES) notes.push(`${f.name}: only the first ${MAX_PDF_PAGES} of ${r.total} pages are shown`);
+        /* policy schedules are usually at the front: pick the first 4 pages of each PDF */
+        r.pages.forEach((p, i) => items.push(Object.assign(p, {on: i < 4, name: f.name})));
+      } catch (e) { notes.push(f.name + ' could not be opened'); }
+    }
+    delete $('#sheet').dataset.lock;
+    if (!items.length) { sheet(`<h3>Nothing to read</h3><p>${esc(notes.join('. ') || 'No pages found.')}</p><button class="btn block" data-x>OK</button>`, s => { $('[data-x]', s).onclick = closeSheet; }); return; }
+    const urls = items.map(it => (it.url = URL.createObjectURL(it.blob)));
+    const hasPdf = items.some(it => it.pdf);
+    const el = sheet(`<h3 id="pickH"></h3>
+      ${hasPdf ? '<p style="margin-bottom:8px">Tap pages to choose which to read: the schedule / benefit pages. Long terms-and-conditions pages are not needed.</p>' : ''}
+      <div class="thumbs pick">${items.map((it, i) => `<button type="button" class="th" data-i="${i}" aria-pressed="${it.on}"><img src="${it.url}" alt=""><span>${esc(it.label)}</span></button>`).join('')}</div>
+      ${notes.length ? `<p class="muted" style="color:var(--warn)">${esc(notes.join('. '))}.</p>` : ''}
+      <p id="pickP"></p>
       <div class="row"><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok>Read with AI</button></div>`);
+    const refresh = () => {
+      const n = items.filter(it => it.on).length;
+      $('#pickH', el).textContent = `Read ${n} ${hasPdf ? 'page' : 'photo'}${n === 1 ? '' : 's'}?`;
+      $('#pickP', el).textContent = (n > MAX_PICK ? `Choose up to ${MAX_PICK}. ` : '') + 'Pages of the same policy can go together. A portal screen listing several policies is fine. ' + (n > max ? `They will be read ${max} at a time. ` : '') + 'Cover the client\'s IC number if it shows; it is not needed.';
+      $('[data-ok]', el).disabled = !n || n > MAX_PICK;
+    };
+    $$('.th', el).forEach(b => b.onclick = () => { const it = items[+b.dataset.i]; it.on = !it.on; b.setAttribute('aria-pressed', it.on); refresh(); });
+    refresh();
     const go = await new Promise(done => { $('[data-x]', el).onclick = () => done(false); $('[data-ok]', el).onclick = () => done(true); });
     if (!go) { closeSheet(); urls.forEach(URL.revokeObjectURL); return; }
+    files = items.filter(it => it.on).map(it => it.blob);
     if (!session() && !(await signIn())) { urls.forEach(URL.revokeObjectURL); return; }
     const box = sheet('<h3>Reading…</h3><div class="spin"></div><p id="rdMsg" style="text-align:center">Usually 20–60 seconds. Keep this screen open.</p>');
     $('#sheet').dataset.lock = '1';
@@ -218,13 +290,13 @@
     } catch (e) {
       closeSheet(); urls.forEach(URL.revokeObjectURL);
       if (e.code === 'unauthorized') { localStorage.setItem('pspt.session', 'null'); toast('Please sign in again.'); return; }
-      sheet(`<h3>Could not read the photos</h3><p>${esc(AI_ERR[e.code] || 'Something went wrong (' + (e.code || 'error') + '). Try again or key it in.')}</p><button class="btn block" data-x>OK</button>`, s => { $('[data-x]', s).onclick = closeSheet; });
+      sheet(`<h3>Could not read it</h3><p>${esc(AI_ERR[e.code] || 'Something went wrong (' + (e.code || 'error') + '). Try again or key it in.')}</p><button class="btn block" data-x>OK</button>`, s => { $('[data-x]', s).onclick = closeSheet; });
       return;
     }
     urls.forEach(URL.revokeObjectURL);
     closeSheet();
     if (!added.length) {
-      sheet('<h3>No policy details found</h3><p>The photo didn\'t show a policy the app could read. Retake it closer and flatter, or key it in.</p><button class="btn block" data-x>OK</button>', s => { $('[data-x]', s).onclick = closeSheet; });
+      sheet('<h3>No policy details found</h3><p>The pages didn\'t show a policy the app could read. Try clearer photos or different PDF pages, or key it in.</p><button class="btn block" data-x>OK</button>', s => { $('[data-x]', s).onclick = closeSheet; });
       return;
     }
     /* possible duplicates: same insurer and same last 4 digits */
