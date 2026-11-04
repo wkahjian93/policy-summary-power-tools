@@ -56,6 +56,7 @@ a.item,a.btn,.bar a{color:inherit;text-decoration:none}
 .item .t{flex:1;min-width:0}
 .item .t b{display:block;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .item .t span{display:block;font-size:12.5px;color:var(--muted)}
+.item .t .pill{display:inline-block;vertical-align:2px;margin-left:4px;font-size:10.5px}
 .item .amt{text-align:right;font-weight:600;font-size:14px;white-space:nowrap}
 .item .amt small{display:block;font-weight:400;font-size:11px;color:var(--muted)}
 .pill{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
@@ -122,3 +123,5 @@ a.item,a.btn,.bar a{color:inherit;text-decoration:none}
 .pick .th img{display:block;height:120px;border:0;border-radius:7px}
 .pick .th span{position:absolute;left:4px;bottom:4px;background:rgba(20,33,61,.85);color:#fff;font-size:11px;font-weight:600;padding:1px 6px;border-radius:6px}
 .pick .th[aria-pressed=true]::after{content:"✓";position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;background:var(--gold);color:var(--ink);font-weight:700;font-size:13px;display:grid;place-items:center}
+.sheet-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.xbtn{width:40px;height:40px;border-radius:50%;background:#ECE9E1;color:var(--ink);font-size:16px;font-weight:700;flex:none}

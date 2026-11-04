@@ -23,6 +23,7 @@
   function sheet(html, onMount) {
     const s = $('#sheet'); s.innerHTML = `<div class="sheet-in" role="dialog" aria-modal="true">${html}</div>`; s.hidden = false;
     s.onclick = e => { if (e.target === s && !s.dataset.lock) closeSheet(); };
+    $$('[data-close]', s).forEach(b => b.onclick = closeSheet);
     onMount && onMount(s.firstChild);
     return s.firstChild;
   }
@@ -504,14 +505,14 @@
   /* ---------- settings ---------- */
   function openSettings() {
     const s = session();
-    const el = sheet(`<h3>Settings</h3><p>Shown at the bottom of every PDF.</p>
+    const el = sheet(`<div class="sheet-top"><h3>Settings</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div><p>Shown at the bottom of every PDF.</p>
       <div class="f"><label for="sN">Your name</label><input id="sN" value="${esc(settings.name)}" autocomplete="name"></div>
       <div class="f"><label for="sT">Title (optional)</label><input id="sT" value="${esc(settings.title)}" placeholder="e.g. Financial Planner, REDEFINE"></div>
       <div class="f"><label for="sP">Phone (optional)</label><input id="sP" value="${esc(settings.phone)}" inputmode="tel"></div>
       <div class="grid2"><div class="f"><label for="sD">Guideline death/TPD (× income)</label><input id="sD" inputmode="decimal" value="${settings.guide.death}"></div>
       <div class="f"><label for="sC">Guideline CI (× income)</label><input id="sC" inputmode="decimal" value="${settings.guide.ci}"></div></div>
       <p class="muted" style="margin-bottom:12px">New clients use these multiples. ${Object.keys(learned).length} benefit names remembered. ${s ? 'Signed in to the team server as ' + esc(s.name) + '.' : 'Not signed in (needed only for reading photos).'}</p>
-      <div style="display:flex;flex-direction:column;gap:8px"><button class="btn primary block" data-ok>Save</button>
+      <div style="display:flex;flex-direction:column;gap:8px"><div class="row"><button class="btn" data-close>Cancel</button><button class="btn primary" data-ok>Save</button></div>
       ${s ? '<button class="btn ghost block" id="out">Sign out of team server</button>' : ''}
       ${Object.keys(learned).length ? '<button class="btn ghost block" id="forget">Forget remembered benefit names</button>' : ''}</div>`);
     $('[data-ok]', el).onclick = () => {
