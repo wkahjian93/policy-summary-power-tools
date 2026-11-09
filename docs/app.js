@@ -1,4 +1,4 @@
-/* Policy Summary Power Tools — screens and storage. Client data stays on this phone only. */
+/* Policy Summary Power Tools — screens and storage. Client data stays on the agent's devices; optional sync is end-to-end encrypted. */
 (function () {
   'use strict';
   const PS = window.PS, CFG = window.PSPT_CONFIG || {};
@@ -13,7 +13,8 @@
   let cases = load('pspt.cases', []);
   let settings = load('pspt.settings', {name: '', title: '', phone: '', guide: {death: 10, ci: 5}});
   let learned = load('pspt.learned', {});
-  const saveCases = () => save('pspt.cases', cases);
+  let tombs = load('pspt.tombs', {});   // deleted client ids -> when, so a delete reaches the other devices
+  const saveCases = () => { save('pspt.cases', cases); scheduleSync(); };
   const getCase = id => cases.find(c => c.id === id);
   const agent = () => ({name: settings.name, title: settings.title, phone: settings.phone});
 
@@ -68,16 +69,18 @@
         <div class="card hero"><h2>New summary</h2><p>Snap the client's policy pages or portal screenshots, confirm what the app reads, and send a one-page summary.</p>
           <button class="btn primary block" id="new">+ New client summary</button></div>
         ${settings.name ? '' : '<div class="checks"><b>Add your name first.</b> It goes at the bottom of every PDF. <a href="#" id="set2">Open settings</a></div>'}
-        <h2 class="muted" style="margin:6px 2px 8px;font-weight:600">CLIENTS ON THIS PHONE</h2>
+        <div id="syncLine"></div>
+        <h2 class="muted" style="margin:6px 2px 8px;font-weight:600">MY CLIENTS</h2>
         ${list.length ? list.map(c => {
           const s = PS.summarise(c), n = PS.pendingChecks(c).length;
           return `<a class="item" href="#/case/${c.id}"><div class="t"><b>${esc(c.client.name || 'Unnamed client')}${c.sample ? ' <span class="pill grey">Sample</span>' : ''}</b><span>${c.policies.length} polic${c.policies.length === 1 ? 'y' : 'ies'} · updated ${new Date(c.updated).toLocaleDateString('en-GB')}</span></div>
             <div class="amt">${PS.rm(s.cats.death.total, {short: true})}<small>${n ? `<span class="pill warn">${n} to check</span>` : 'death cover'}</small></div></a>`;
         }).join('') : '<div class="empty">No clients yet.<br>Tap <b>New client summary</b>, or <a href="#" id="demo">open a sample</a> to see the format.</div>'}
         ${list.length && !list.some(c => c.sample) ? '<p class="muted" style="text-align:center;margin:10px 0"><a href="#" id="demo">Open the sample client</a></p>' : ''}
-        <p class="muted" style="text-align:center;margin:18px 10px">Client details are saved on this phone only. Photos are read and then discarded.</p>
+        <p class="muted" style="text-align:center;margin:18px 10px">${syncCfg ? 'Clients are locked with your sync passphrase before syncing. Photos are read and then discarded.' : 'Client details are saved on this device only. Photos are read and then discarded.'}</p>
       </div>`;
     $('#new').onclick = newCase;
+    updateSyncLine();
     $('#set').onclick = openSettings;
     const s2 = $('#set2'); if (s2) s2.onclick = e => { e.preventDefault(); openSettings(); };
     const d = $('#demo'); if (d) d.onclick = e => { e.preventDefault(); const c = window.sampleCase(PS); cases.push(c); saveCases(); location.hash = '#/case/' + c.id; };
@@ -139,7 +142,7 @@
     $('#pdfIn').onchange = e => { const f = [...e.target.files]; e.target.value = ''; if (f.length) readPhotos(c, f); };
     $('#del').onclick = async () => {
       if (await confirmBox('Delete ' + (c.client.name || 'this client') + '?', 'This removes the client and all ' + c.policies.length + ' policies from this phone. It cannot be undone.', 'Delete', true)) {
-        cases = cases.filter(x => x.id !== c.id); saveCases(); location.hash = '#/';
+        cases = cases.filter(x => x.id !== c.id); tombs[c.id] = new Date().toISOString(); save('pspt.tombs', tombs); saveCases(); location.hash = '#/';
       }
     };
     const upd = () => {
@@ -503,6 +506,112 @@
   }
 
   /* ---------- settings ---------- */
+  /* ---------- sync between this agent's own devices ----------
+     Clients are encrypted here with a key made from the agent's name + personal sync passphrase.
+     The team server stores only scrambled data under a vault id; it cannot read clients, and other agents
+     (or the app owner) cannot open them without the passphrase. */
+  let syncCfg = load('pspt.sync', null), syncTimer = null, syncing = null, syncState = '', lastPulled = 0;
+  const te = new TextEncoder(), td = new TextDecoder();
+  const toB64 = u8 => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
+  const fromB64 = b => Uint8Array.from(atob(b), ch => ch.charCodeAt(0));
+  const syncName = n => String(n || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  async function deriveSync(name, pass) {
+    const base = await crypto.subtle.importKey('raw', te.encode(pass), 'PBKDF2', false, ['deriveBits']);
+    const bits = new Uint8Array(await crypto.subtle.deriveBits({name: 'PBKDF2', salt: te.encode('pspt-sync:' + syncName(name)), iterations: 250000, hash: 'SHA-256'}, base, 512));
+    return {k: toB64(bits.slice(0, 32)), vault: [...bits.slice(32)].map(b => b.toString(16).padStart(2, '0')).join('')};
+  }
+  const aesKey = () => crypto.subtle.importKey('raw', fromB64(syncCfg.k), 'AES-GCM', false, ['encrypt', 'decrypt']);
+  async function seal(key, obj) {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = new Uint8Array(await crypto.subtle.encrypt({name: 'AES-GCM', iv}, key, te.encode(JSON.stringify(obj))));
+    return {iv: toB64(iv), ct: toB64(ct)};
+  }
+  async function open(key, it) { return JSON.parse(td.decode(await crypto.subtle.decrypt({name: 'AES-GCM', iv: fromB64(it.iv)}, key, fromB64(it.ct)))); }
+
+  function scheduleSync() { if (!syncCfg) return; clearTimeout(syncTimer); syncTimer = setTimeout(syncNow, 1500); }
+  async function syncNow() {
+    if (!syncCfg || !session() || !CFG.api || !navigator.onLine) return;
+    if (syncing) return syncing;
+    syncing = (async () => {
+      try {
+        const key = await aesKey(), vault = syncCfg.vault;
+        const server = (await post({op: 'psget', vault})).items || {};
+        let pulled = 0; lastPulled = 0;
+        for (const id of Object.keys(server)) {
+          const s = server[id], local = getCase(id), mine = [local && local.updated, tombs[id]].filter(Boolean).sort().pop();
+          if (mine && s.u <= mine) continue;
+          if (s.d) { if (local) { cases = cases.filter(x => x.id !== id); pulled++; } tombs[id] = s.u; continue; }
+          let c; try { c = await open(key, s); } catch (e) { continue; }   // not ours / damaged: leave it
+          if (local) cases[cases.indexOf(local)] = c; else cases.push(c);
+          pulled++;
+        }
+        const push = {};
+        for (const c of cases) if (!c.sample && (!server[c.id] || server[c.id].u < c.updated)) push[c.id] = Object.assign({u: c.updated}, await seal(key, c));
+        for (const id of Object.keys(tombs)) if (server[id] && !server[id].d && server[id].u < tombs[id]) push[id] = {u: tombs[id], d: true};
+        if (Object.keys(push).length) await post({op: 'psput', vault, items: push});
+        save('pspt.tombs', tombs);
+        lastPulled = pulled;
+        if (pulled) {
+          save('pspt.cases', cases);
+          const h = location.hash.replace(/^#\/?/, '').split('/');
+          if (!h[0] || (h[0] === 'case' && !h[2]) || (h[0] === 'case' && !getCase(h[1]))) route();
+          toast(`Updated ${pulled} client${pulled > 1 ? 's' : ''} from your other device`);
+        }
+        syncCfg.last = new Date().toISOString(); save('pspt.sync', syncCfg); syncState = '';
+      } catch (e) {
+        syncState = e.code === 'invalid_request' ? 'server' : e.code === 'unauthorized' ? 'signin' : 'offline';
+      } finally { syncing = null; updateSyncLine(); }
+    })();
+    return syncing;
+  }
+  function syncLine() {
+    if (!syncCfg) return '<button class="syncline" id="syncSet">☁︎ Sync off · <u>Use on iPad &amp; phone</u></button>';
+    const t = syncCfg.last ? new Date(syncCfg.last).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'}) : '';
+    const msg = syncState === 'server' ? 'Sync waiting for the team server update' : syncState === 'signin' ? 'Sync paused: sign in again' : syncState === 'offline' ? 'Sync paused: no connection' : syncing ? 'Syncing…' : t ? 'Synced ' + t : 'Sync on';
+    return `<button class="syncline${syncState ? ' warn' : ''}" id="syncSet">☁︎ ${esc(msg)} · ${esc(syncCfg.name)}</button>`;
+  }
+  function updateSyncLine() { const el = $('#syncLine'); if (el) { el.innerHTML = syncLine(); $('#syncSet').onclick = openSync; } }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncNow(); });
+  setInterval(() => { if (document.visibilityState === 'visible') syncNow(); }, 60000);
+  addEventListener('online', () => syncNow());
+
+  async function openSync() {
+    if (syncCfg) {
+      const el = sheet(`<div class="sheet-top"><h3>Sync my devices</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div>
+        <p>On as <b>${esc(syncCfg.name)}</b>. Clients you add or change here appear on your other devices that use the same name and sync passphrase. ${syncCfg.last ? 'Last synced ' + esc(new Date(syncCfg.last).toLocaleString('en-GB')) + '.' : ''}</p>
+        ${syncState === 'server' ? '<div class="checks">The team server needs its update before sync can run. Your clients are safe on this device.</div>' : ''}
+        <div style="display:flex;flex-direction:column;gap:8px"><button class="btn primary block" id="sNow">Sync now</button><button class="btn ghost block" id="sOff">Turn off sync on this device</button></div>`);
+      $('#sNow', el).onclick = async () => { $('#sNow', el).textContent = 'Syncing…'; await syncNow(); closeSheet(); toast(syncState ? 'Sync could not finish' : 'Synced'); route(); };
+      $('#sOff', el).onclick = async () => {
+        if (await confirmBox('Turn off sync here?', 'Clients stay on this device. Your synced copy stays locked on the server for your other devices.', 'Turn off')) { syncCfg = null; localStorage.removeItem('pspt.sync'); route(); }
+      };
+      return;
+    }
+    if (!session() && !(await signIn())) return;
+    const el = sheet(`<div class="sheet-top"><h3>Use on iPad &amp; phone</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div>
+      <p>Set a personal sync passphrase. Type the <b>same name and passphrase</b> on each of your devices and your clients will match. They are locked with your passphrase before leaving this device, so other agents and REDEFINE cannot read them.</p>
+      <div class="f"><label for="yName">Your name (same on every device)</label><input id="yName" autocomplete="name" value="${esc(settings.name || (session() || {}).name || '')}"></div>
+      <div class="f"><label for="yPw">Sync passphrase (at least 8 characters)</label><input id="yPw" type="password" autocomplete="new-password"></div>
+      <div class="f"><label for="yPw2">Type it again</label><input id="yPw2" type="password" autocomplete="new-password"></div>
+      <p class="muted" style="color:var(--warn)">Write it down. If you forget it, the synced copy cannot be opened (clients on your devices stay). Don't use the team code.</p>
+      <p class="muted" id="yMsg" role="alert" style="color:var(--err);min-height:18px"></p>
+      <div class="row"><button class="btn" data-close>Cancel</button><button class="btn primary" id="yGo">Turn on sync</button></div>`);
+    $$('[data-close]', el).forEach(b => b.onclick = closeSheet);
+    $('#yGo', el).onclick = async () => {
+      const name = $('#yName', el).value.trim(), pw = $('#yPw', el).value, msg = $('#yMsg', el);
+      if (!name) return (msg.textContent = 'Enter your name.');
+      if (pw.length < 8) return (msg.textContent = 'Use at least 8 characters.');
+      if (pw !== $('#yPw2', el).value) return (msg.textContent = 'The two passphrases are different.');
+      if ((session() || {}).code === pw) return (msg.textContent = 'Use your own passphrase, not the team code.');
+      $('#yGo', el).disabled = true; $('#yGo', el).textContent = 'Turning on…';
+      syncCfg = Object.assign({name}, await deriveSync(name, pw)); save('pspt.sync', syncCfg);
+      await syncNow();
+      closeSheet();
+      toast(syncState === 'server' ? 'Sync is set. It starts once the team server is updated.' : syncState ? 'Sync is set. It will finish when you are online.' : lastPulled ? 'Sync is on. ' + lastPulled + ' client(s) came from your other device.' : 'Sync is on. If your other device already syncs and nothing appeared, check the name and passphrase match.');
+      route();
+    };
+  }
+
   function openSettings() {
     const s = session();
     const el = sheet(`<div class="sheet-top"><h3>Settings</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div><p>Shown at the bottom of every PDF.</p>
@@ -525,4 +634,5 @@
   }
 
   route();
+  syncNow();
 })();

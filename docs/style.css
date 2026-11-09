@@ -125,3 +125,6 @@ a.item,a.btn,.bar a{color:inherit;text-decoration:none}
 .pick .th[aria-pressed=true]::after{content:"✓";position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;background:var(--gold);color:var(--ink);font-weight:700;font-size:13px;display:grid;place-items:center}
 .sheet-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .xbtn{width:40px;height:40px;border-radius:50%;background:#ECE9E1;color:var(--ink);font-size:16px;font-weight:700;flex:none}
+.syncline{display:block;width:100%;text-align:left;font-size:12.5px;color:var(--ok);font-weight:600;padding:2px 4px 8px}
+.syncline.warn{color:var(--warn)}
+.syncline u{color:var(--navy)}
