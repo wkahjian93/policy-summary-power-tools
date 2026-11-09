@@ -116,7 +116,7 @@
     const t = String(s || '').replace(/[^A-Za-z0-9]/g, '');
     if (!t) return '';
     if (/^\d{12}$/.test(t)) return ''; // looks like a MyKad number, drop it
-    return t.length <= 4 ? t : '••••' + t.slice(-4);
+    return '••••' + t.slice(-4);
   }
 
   /* ---------- AI ---------- */
@@ -126,7 +126,7 @@
     return [
       'You read Malaysian life insurance / takaful documents for an insurance agent preparing a policy summary for their client.',
       'The images may be policy schedules, contract pages, benefit illustrations, annual statements, or screenshots of an insurer customer portal or app, in English, Malay or Chinese. They may be blurred, cropped or rotated.',
-      'Extract every policy you can see. One image can show several policies (a portal list); several images can be pages of one policy (combine them).',
+      'Extract every policy you can see. One image can show several policies (a portal list); several images can be pages of one policy (combine them). The images can also come from different insurers and different policies: keep each policy separate and never combine pages that show a different insurer or a different policy number.',
       'RULES: Copy only what is printed. Never estimate, calculate or fill in a value that is not visible: use null. Amounts are numbers in RM without commas. Do not output any identity card (MyKad/NRIC) number, address, phone or bank details. For policy numbers output only the last 4 characters.',
       'List every benefit / rider separately using the exact name printed. Give each a category: death, tpd, ci (critical illness / late stage), eci (early stage or multi-stage CI), accident, medical (medical card / hospital & surgical), hospital (daily hospital income), waiver, other.',
       'For medical: annualLimit, lifetimeLimit (set lifetimeUnlimited true if it says no lifetime limit/unlimited), roomBoard (per day), deductible.',
@@ -202,6 +202,44 @@
       return pol;
     });
   }
+
+  /* Pages of one policy can be read in different AI batches. Join results that are clearly the same policy:
+     same insurer and same policy number, or same insurer and same plan name when one side has no number.
+     Missing fields are filled from the other part; benefits are combined without duplicates. */
+  function samePolicy(a, b) {
+    if (!a.insurer || a.insurer !== b.insurer || a.insurer === 'Other insurer') return false;
+    if (a.policyNo && b.policyNo) return a.policyNo === b.policyNo;
+    const pa = norm(a.productName), pb = norm(b.productName);
+    return !!pa && pa === pb;
+  }
+  function mergePolicies(list) {
+    const out = [];
+    for (const p of list) {
+      const base = out.find(q => samePolicy(q, p));
+      if (!base) { out.push(p); continue; }
+      for (const k of ['productName', 'policyNo', 'lifeAssured', 'startDate', 'premiumFreq', 'cashValueDate', 'insurerRaw'])
+        if (!base[k] && p[k]) base[k] = p[k];
+      for (const k of ['premium', 'cashValue', 'bonus']) if (base[k] == null && p[k] != null) base[k] = p[k];
+      if (base.status === 'unknown' && p.status !== 'unknown') base.status = p.status;
+      if (base.planType === 'other' && p.planType !== 'other') base.planType = p.planType;
+      for (const b of p.benefits) {
+        const same = base.benefits.find(x => x.cat === b.cat && norm(x.name) === norm(b.name));
+        if (!same) { base.benefits.push(b); continue; }
+        for (const k of ['amount', 'untilAge', 'annual', 'lifetime', 'roomBoard', 'deductible']) if (same[k] == null && b[k] != null) same[k] = b[k];
+        if (b.lifetimeUnlimited) same.lifetimeUnlimited = true;
+        if (same.check && !b.check && (same.amount != null || same.annual != null)) delete same.check;
+      }
+      Object.assign(base.checks, p.checks);
+      /* drop questions the other part answered */
+      if (base.premium != null && base.premiumFreq) delete base.checks.premium;
+      if (base.status !== 'unknown') delete base.checks.status;
+      if (base.benefits.length) delete base.checks.benefits;
+      if (PS_INS_OK(base)) delete base.checks.insurer;
+      base.parts = (base.parts || 1) + 1;
+    }
+    return out;
+  }
+  const PS_INS_OK = p => !!p.insurer && p.insurer !== 'Other insurer';
 
   function blankPolicy() {
     return {id: uid(), source: 'manual', insurer: '', insurerRaw: '', productName: '', policyNo: '', lifeAssured: '', planType: 'traditional',
@@ -304,6 +342,6 @@
   function learnKey(name) { return norm(name); }
 
   const API = {CATS, CAT_IDS, catOf, INSURERS, matchInsurer, insurerColor, classify, parseAmount, parseFreq, FREQ, annualPremium,
-    maskPolicyNo, aiPrompt, fromAI, blankPolicy, blankBenefit, pendingChecks, summarise, policyRow, rm, norm, learnKey, uid};
+    maskPolicyNo, aiPrompt, fromAI, mergePolicies, blankPolicy, blankBenefit, pendingChecks, summarise, policyRow, rm, norm, learnKey, uid};
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.PS = API;
 })(this);

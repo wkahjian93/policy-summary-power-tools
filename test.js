@@ -81,6 +81,26 @@ eq('odd status -> must confirm', [p1.status, !!p1.checks.status], ['unknown', tr
 eq('no benefits -> flagged', !!p1.checks.benefits, true);
 eq('checks counted', PS.pendingChecks({policies: got}).length >= 7, true);
 
+console.log('Joining parts of a policy read in different batches');
+{
+  const part1 = PS.fromAI({policies: [{insurer: 'Great Eastern Life', productName: 'Plan X', policyNoLast4: '1234', status: 'inforce', premium: 300, premiumFrequency: 'monthly',
+    benefits: [{name: 'Death Benefit', category: 'death', amount: 200000}, {name: 'Critical Illness', category: 'ci', amount: null}]}]})[0];
+  const part2 = PS.fromAI({policies: [{insurer: 'GREAT EASTERN LIFE ASSURANCE (MALAYSIA) BERHAD', productName: 'PLAN X', policyNoLast4: '', status: 'unknown', cashValue: 12000,
+    benefits: [{name: 'Critical Illness', category: 'ci', amount: 80000}, {name: 'Medical Rider', category: 'medical', annualLimit: 1000000}]}]})[0];
+  const other = PS.fromAI({policies: [{insurer: 'AIA', productName: 'Plan X', policyNoLast4: '1234', status: 'inforce', premium: 100, premiumFrequency: 'monthly',
+    benefits: [{name: 'Death Benefit', category: 'death', amount: 50000}]}]})[0];
+  const diffNo = PS.fromAI({policies: [{insurer: 'Great Eastern Life', productName: 'Plan X', policyNoLast4: '9999', status: 'inforce', premium: 50, premiumFrequency: 'monthly',
+    benefits: [{name: 'Death Benefit', category: 'death', amount: 10000}]}]})[0];
+  const m = PS.mergePolicies([part1, other, part2, diffNo]);
+  const ge = m.find(p => p.policyNo === '••••1234' && p.insurer === 'Great Eastern Life');
+  eq('3 policies left (GE 1234 joined; AIA and GE 9999 kept apart)', m.length, 3);
+  eq('cash value filled from 2nd part', ge.cashValue, 12000);
+  eq('CI amount filled and its flag cleared', [ge.benefits.find(b => b.cat === 'ci').amount, !!ge.benefits.find(b => b.cat === 'ci').check], [80000, false]);
+  eq('medical rider added, no duplicate death', [ge.benefits.filter(b => b.cat === 'medical').length, ge.benefits.filter(b => b.cat === 'death').length], [1, 1]);
+  eq('status kept as in force', ge.status, 'inforce');
+  eq('different insurer, same number: not joined', m.some(p => p.insurer === 'AIA'), true);
+}
+
 console.log('Summary maths (sample client)');
 const c = sampleCase(PS), s = PS.summarise(c);
 eq('death = 300k + 100k + 200k (lapsed 50k not counted)', s.cats.death.total, 600000);

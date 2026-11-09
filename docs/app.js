@@ -114,11 +114,14 @@
         <div class="card hero"><h2>So far</h2>
           <div class="stat"><div><span>Death</span><b>${PS.rm(s.cats.death.total, {short: true})}</b></div><div><span>CI</span><b>${PS.rm(s.cats.ci.total, {short: true})}</b></div><div><span>Medical/yr</span><b>${s.medical.annual != null ? PS.rm(s.medical.annual, {short: true}) : '—'}</b></div></div>
         </div>
-        <div class="big2" style="margin-bottom:10px">
-          <button class="btn" id="snap">${ICONS.cam}Snap / upload<br>policy photos</button>
-          <button class="btn" id="pdfB">${ICONS.pdf}Upload<br>policy PDF</button>
+        <button class="btn primary block addbig" id="addP">${ICONS.cam}<span><b>Add policy pages</b><small>Photos, screenshots &amp; PDFs · many policies, any insurer</small></span></button>
+        <div class="big3">
+          <button class="btn sm" id="snap">${ICONS.cam.replace('<svg ', '<svg width="18" height="18" ')}Take photo</button>
+          <button class="btn sm" id="pics">+ Photos</button>
+          <button class="btn sm" id="pdfB">${ICONS.pdf.replace('<svg ', '<svg width="18" height="18" ')}+ PDF</button>
         </div>
         <button class="btn block" id="key" style="margin-bottom:12px">${ICONS.pen.replace('<svg ', '<svg width="22" height="22" ')}Key in a policy</button>
+        <input type="file" id="camIn" accept="image/*" capture="environment" hidden>
         <input type="file" id="file" accept="image/*" multiple hidden>
         <input type="file" id="pdfIn" accept="application/pdf,.pdf" multiple hidden>
         ${checks.length ? `<div class="checks"><b>${checks.length} item${checks.length > 1 ? 's' : ''} to confirm</b> before the summary is complete. Tap a policy marked <span class="pill warn">check</span>.</div>` : ''}
@@ -128,7 +131,7 @@
           const tags = PS.CATS.filter(k => r[k.id].has).map(k => k.short).join(' · ');
           return `<a class="item" href="#/case/${c.id}/policy/${p.id}"><span class="stripe" style="background:${PS.insurerColor(p.insurer)}"></span><div class="t"><b>${esc(p.insurer || 'Insurer?')}</b><span>${esc(p.productName || 'Plan')}${p.policyNo ? ' · ' + esc(p.policyNo) : ''}</span><span>${esc(tags || 'No benefits yet')}</span></div>
             <div class="amt">${n ? `<span class="pill warn">${n} check</span>` : out ? `<span class="pill grey">${esc(p.status)}</span>` : '<span class="pill ok">OK</span>'}<small>${p.source === 'photo' ? 'from photo' : 'keyed in'}</small></div></a>`;
-        }).join('') : '<div class="empty">No policies yet. Snap a photo of a policy schedule, statement or the insurer\'s app screen, or key one in.</div>'}
+        }).join('') : '<div class="empty">No policies yet. Tap <b>Add policy pages</b>, add every policy the client has from any insurer, then read them all at once.</div>'}
         <div class="card" style="margin-top:12px"><h2>Client</h2>
           <div class="f"><label for="cName">Name on PDF</label><input id="cName" value="${esc(c.client.name)}"></div>
           <div class="grid2"><div class="f"><label for="cAge">Age</label><input id="cAge" inputmode="numeric" value="${money(c.client.age)}"></div>
@@ -138,10 +141,11 @@
       </div>
       <div class="dock"><a class="btn navy" href="#/case/${c.id}/summary" ${c.policies.length ? '' : 'aria-disabled="true" style="opacity:.45;pointer-events:none"'}>See summary &amp; PDF</a></div>`;
     $('#key').onclick = () => { location.hash = '#/case/' + c.id + '/policy/new'; };
-    $('#snap').onclick = () => $('#file').click();
-    $('#file').onchange = e => { const f = [...e.target.files]; e.target.value = ''; if (f.length) readPhotos(c, f); };
+    $('#addP').onclick = () => { if (!tray || tray.caseId !== c.id) { clearTray(); tray = {caseId: c.id, items: [], notes: []}; } showTray(c); };
+    $('#snap').onclick = () => $('#camIn').click();
+    $('#pics').onclick = () => $('#file').click();
     $('#pdfB').onclick = () => $('#pdfIn').click();
-    $('#pdfIn').onchange = e => { const f = [...e.target.files]; e.target.value = ''; if (f.length) readPhotos(c, f); };
+    ['#camIn', '#file', '#pdfIn'].forEach(s => { $(s).onchange = e => { const f = [...e.target.files]; e.target.value = ''; if (f.length) addToTray(c, f); }; });
     $('#del').onclick = async () => {
       if (await confirmBox('Delete ' + (c.client.name || 'this client') + '?', 'This removes the client and all ' + c.policies.length + ' policies from this phone. It cannot be undone.', 'Delete', true)) {
         cases = cases.filter(x => x.id !== c.id); tombs[c.id] = new Date().toISOString(); save('pspt.tombs', tombs); saveCases(); location.hash = '#/';
@@ -206,7 +210,7 @@
   /* ---------- PDFs: each page becomes an image the AI can read ---------- */
   const loadScript = src => new Promise((ok, bad) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => bad(new Error(src)); document.head.appendChild(s); });
   const isPdf = f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name || '');
-  const MAX_PDF_PAGES = 20, MAX_PICK = 12;
+  const MAX_PDF_PAGES = 20, MAX_PICK = 40;
   function askPassword(name, wrong) {
     return new Promise(done => {
       const el = sheet(`<h3>${wrong ? 'Wrong password' : 'This PDF has a password'}</h3><p>${esc(name)} is locked. E-statements often use the client's IC number or date of birth. The password is used once on this phone and not saved.</p>
@@ -234,7 +238,7 @@
       const v = page.getViewport({scale: Math.min(3, 1800 / Math.max(v1.width, v1.height))});
       const cv = document.createElement('canvas'); cv.width = Math.round(v.width); cv.height = Math.round(v.height);
       const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height);
-      await page.render({canvasContext: g, viewport: v}).promise;
+      await page.render({canvasContext: g, viewport: v, intent: 'print'}).promise;   // 'print' doesn't pause when the screen is hidden
       pages.push({blob: await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.88)), label: (doc.numPages > 1 ? 'p' + i : 'PDF'), pdf: true, page: i});
       page.cleanup();
     }
@@ -242,77 +246,121 @@
     return {pages, total};
   }
 
-  async function readPhotos(c, files) {
-    const max = CFG.maxPhotosPerRead || 4;
-    /* turn photos and PDF pages into one list of images */
-    let items = [];
-    const notes = [];
+  /* ---------- the tray: collect photos, screenshots and PDFs from many policies, then read them all ----------
+     Agents can keep adding (camera, gallery, PDF) before reading. Pages are sent in small batches, 3 at a time,
+     each PDF's pages kept together, and parts of the same policy found in different batches are joined. */
+  let tray = null;   // {caseId, items: [{blob, url, label, src, on}], notes: []}
+  let photoN = 0;
+  async function addToTray(c, files) {
+    if (!tray || tray.caseId !== c.id) { clearTray(); tray = {caseId: c.id, items: [], notes: []}; }
     if (files.some(isPdf)) { sheet('<h3>Opening PDF…</h3><div class="spin"></div><p id="pdfMsg" style="text-align:center"></p>'); $('#sheet').dataset.lock = '1'; }
     for (const f of files) {
-      if (!isPdf(f)) { items.push({blob: f, label: 'Photo', on: true}); continue; }
+      if (!isPdf(f)) { tray.items.push({blob: f, label: 'Photo ' + (++photoN), on: true}); continue; }
       try {
         const r = await pdfPages(f, (i, n) => { const m = $('#pdfMsg'); if (m) m.textContent = `${f.name}: page ${i} of ${n}`; });
-        if (r.skipped) { notes.push(f.name + ' skipped (locked)'); continue; }
-        if (r.total > MAX_PDF_PAGES) notes.push(`${f.name}: only the first ${MAX_PDF_PAGES} of ${r.total} pages are shown`);
+        if (r.skipped) { tray.notes.push(f.name + ' skipped (locked)'); continue; }
+        if (r.total > MAX_PDF_PAGES) tray.notes.push(`${f.name}: only the first ${MAX_PDF_PAGES} of ${r.total} pages are shown`);
+        /* pages of one PDF share a key so they stay in the same AI batch */
+        const short = f.name.replace(/\.pdf$/i, '').slice(0, 14), key = 'pdf-' + PS.uid();
         /* policy schedules are usually at the front: pick the first 4 pages of each PDF */
-        r.pages.forEach((p, i) => items.push(Object.assign(p, {on: i < 4, name: f.name})));
-      } catch (e) { notes.push(f.name + ' could not be opened'); }
+        r.pages.forEach((p, i) => tray.items.push({blob: p.blob, label: short + (r.pages.length > 1 ? ' p' + p.page : ''), pdfKey: key, on: i < 4}));
+      } catch (e) { tray.notes.push(f.name + ' could not be opened'); }
     }
+    tray.items.forEach(it => { if (!it.url) it.url = URL.createObjectURL(it.blob); });
     delete $('#sheet').dataset.lock;
-    if (!items.length) { sheet(`<h3>Nothing to read</h3><p>${esc(notes.join('. ') || 'No pages found.')}</p><button class="btn block" data-x>OK</button>`, s => { $('[data-x]', s).onclick = closeSheet; }); return; }
-    const urls = items.map(it => (it.url = URL.createObjectURL(it.blob)));
-    const hasPdf = items.some(it => it.pdf);
-    const el = sheet(`<h3 id="pickH"></h3>
-      ${hasPdf ? '<p style="margin-bottom:8px">Tap pages to choose which to read: the schedule / benefit pages. Long terms-and-conditions pages are not needed.</p>' : ''}
-      <div class="thumbs pick">${items.map((it, i) => `<button type="button" class="th" data-i="${i}" aria-pressed="${it.on}"><img src="${it.url}" alt=""><span>${esc(it.label)}</span></button>`).join('')}</div>
-      ${notes.length ? `<p class="muted" style="color:var(--warn)">${esc(notes.join('. '))}.</p>` : ''}
-      <p id="pickP"></p>
-      <div class="row"><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok>Read with AI</button></div>`);
-    const refresh = () => {
-      const n = items.filter(it => it.on).length;
-      $('#pickH', el).textContent = `Read ${n} ${hasPdf ? 'page' : 'photo'}${n === 1 ? '' : 's'}?`;
-      $('#pickP', el).textContent = (n > MAX_PICK ? `Choose up to ${MAX_PICK}. ` : '') + 'Pages of the same policy can go together. A portal screen listing several policies is fine. ' + (n > max ? `They will be read ${max} at a time. ` : '') + 'Cover the client\'s IC number if it shows; it is not needed.';
-      $('[data-ok]', el).disabled = !n || n > MAX_PICK;
+    showTray(c);
+  }
+  function clearTray() { if (tray) tray.items.forEach(it => it.url && URL.revokeObjectURL(it.url)); tray = null; photoN = 0; }
+
+  function showTray(c) {
+    const items = tray.items, n = items.filter(it => it.on).length;
+    const el = sheet(`<div class="sheet-top"><h3>${n ? `Read ${n} page${n === 1 ? '' : 's'}?` : 'Add policy pages'}</h3><button type="button" class="xbtn" id="trayX" aria-label="Close">✕</button></div>
+      <p style="margin-bottom:8px">Add every policy for ${esc(c.client.name || 'this client')}, from any insurer: photos, screenshots of insurer apps, and PDFs. Tap a page to leave it out. The AI sorts them into separate policies.</p>
+      ${items.length ? `<div class="pick grid">${items.map((it, i) => `<button type="button" class="th" data-i="${i}" aria-pressed="${it.on}"><img src="${it.url}" alt=""><span>${esc(it.label)}</span></button>`).join('')}</div>` : ''}
+      <div class="addrow">
+        <button class="btn sm" id="tCam">${ICONS.cam.replace('<svg ', '<svg width="18" height="18" ')}Take photo</button>
+        <button class="btn sm" id="tPic">+ Photos</button>
+        <button class="btn sm" id="tPdf">${ICONS.pdf.replace('<svg ', '<svg width="18" height="18" ')}+ PDF</button>
+      </div>
+      ${tray.notes.length ? `<p class="muted" style="color:var(--warn)">${esc(tray.notes.join('. '))}.</p>` : ''}
+      <p class="muted">${n > MAX_PICK ? `<b style="color:var(--err)">Choose up to ${MAX_PICK} pages.</b> ` : ''}Long terms-and-conditions pages are not needed; pick schedule, benefit and statement pages. Cover IC numbers if they show.</p>
+      <div class="row" style="margin-top:10px"><button class="btn" id="tCancel">Cancel</button><button class="btn primary" id="tGo" ${!n || n > MAX_PICK ? 'disabled' : ''}>Read with AI</button></div>`);
+    $('#sheet').dataset.lock = '1';   // a stray tap outside must not throw the pages away
+    $$('.th', el).forEach(b => b.onclick = () => { const it = items[+b.dataset.i]; it.on = !it.on; showTray(c); });
+    $('#tCam', el).onclick = () => $('#camIn').click();
+    $('#tPic', el).onclick = () => $('#file').click();
+    $('#tPdf', el).onclick = () => $('#pdfIn').click();
+    const leave = async () => {
+      if (items.length && !(await confirmBox('Discard these pages?', `${items.length} page${items.length > 1 ? 's' : ''} will be removed. Nothing has been read yet.`, 'Discard', true))) return showTray(c);
+      clearTray(); closeSheet();
     };
-    $$('.th', el).forEach(b => b.onclick = () => { const it = items[+b.dataset.i]; it.on = !it.on; b.setAttribute('aria-pressed', it.on); refresh(); });
-    refresh();
-    const go = await new Promise(done => { $('[data-x]', el).onclick = () => done(false); $('[data-ok]', el).onclick = () => done(true); });
-    if (!go) { closeSheet(); urls.forEach(URL.revokeObjectURL); return; }
-    files = items.filter(it => it.on).map(it => it.blob);
-    if (!session() && !(await signIn())) { urls.forEach(URL.revokeObjectURL); return; }
-    const box = sheet('<h3>Reading…</h3><div class="spin"></div><p id="rdMsg" style="text-align:center">Usually 20–60 seconds. Keep this screen open.</p>');
+    $('#trayX', el).onclick = leave; $('#tCancel', el).onclick = leave;
+    $('#tGo', el).onclick = () => readTray(c);
+  }
+
+  async function readTray(c) {
+    const max = CFG.maxPhotosPerRead || 4, picked = tray.items.filter(it => it.on);
+    if (!session() && !(await signIn())) return showTray(c);
+    /* batches: each PDF's pages together (split every 4), photos in the order taken */
+    const groups = [];
+    for (const it of picked) {
+      const key = it.pdfKey || 'photos';
+      let g = groups.find(x => x.key === key && x.items.length < max);
+      if (!g) groups.push(g = {key, items: []});
+      g.items.push(it);
+    }
+    const box = sheet(`<h3>Reading ${picked.length} page${picked.length > 1 ? 's' : ''}…</h3><div class="spin"></div><p id="rdMsg" style="text-align:center"></p><p class="muted" style="text-align:center">About 20–60 seconds per group, 3 groups at a time. Keep this screen open.</p>`);
     $('#sheet').dataset.lock = '1';
-    const added = [];
-    try {
-      for (let i = 0; i < files.length; i += max) {
-        const part = files.slice(i, i + max);
-        if (files.length > max) $('#rdMsg', box).textContent = `Reading photos ${i + 1}–${i + part.length} of ${files.length}…`;
-        const images = [];
-        for (const f of part) { try { images.push(await toJpegB64(f)); } catch (e) { throw {code: 'image_rejected'}; } }
-        const r = await post({op: 'ai', prompt: PS.aiPrompt(learned), images});
-        if (r.truncated) throw {code: 'invalid_json'};
-        added.push(...PS.fromAI(parseJSON(r.text), learned));
+    const found = [], failed = [];
+    let done = 0, stop = null;
+    const msg = () => { const m = $('#rdMsg', box); if (m) m.textContent = `Group ${Math.min(done + 1, groups.length)} of ${groups.length} · ${found.length} polic${found.length === 1 ? 'y' : 'ies'} found so far`; };
+    msg();
+    const queue = groups.slice();
+    async function worker() {
+      while (queue.length && !stop) {
+        const g = queue.shift();
+        try {
+          const images = [];
+          for (const it of g.items) { try { images.push(await toJpegB64(it.blob)); } catch (e) { throw {code: 'image_rejected'}; } }
+          const r = await post({op: 'ai', prompt: PS.aiPrompt(learned), images});
+          if (r.truncated) throw {code: 'invalid_json'};
+          found.push(...PS.fromAI(parseJSON(r.text), learned));
+        } catch (e) {
+          if (['unauthorized', 'daily_limit', 'no_credit', 'bad_api_key', 'offline'].includes(e.code)) stop = e;
+          failed.push(...g.items.map(it => Object.assign(it, {why: e.code})));
+        }
+        done++; msg();
       }
-    } catch (e) {
-      closeSheet(); urls.forEach(URL.revokeObjectURL);
-      if (e.code === 'unauthorized') { if (await signIn()) toast('Signed in. Tap Snap / Upload again.'); return; }
-      sheet(`<h3>Could not read it</h3><p>${esc(AI_ERR[e.code] || 'Something went wrong (' + (e.code || 'error') + '). Try again or key it in.')}</p><button class="btn block" data-x>OK</button>`, s => { $('[data-x]', s).onclick = closeSheet; });
-      return;
     }
-    urls.forEach(URL.revokeObjectURL);
-    closeSheet();
-    if (!added.length) {
-      sheet('<h3>No policy details found</h3><p>The pages didn\'t show a policy the app could read. Try clearer photos or different PDF pages, or key it in.</p><button class="btn block" data-x>OK</button>', s => { $('[data-x]', s).onclick = closeSheet; });
-      return;
-    }
-    /* possible duplicates: same insurer and same last 4 digits */
-    added.forEach(p => {
+    await Promise.all([worker(), worker(), worker()]);
+    if (stop && stop.code === 'unauthorized') { if (await signIn()) toast('Signed in. Tap Read with AI again.'); return showTray(c); }
+
+    const merged = PS.mergePolicies(found);
+    merged.forEach(p => {
       const dup = c.policies.find(q => q.insurer && q.insurer === p.insurer && q.policyNo && q.policyNo === p.policyNo);
       if (dup) p.checks.duplicate = 'Looks like a policy already added (' + dup.policyNo + '). Delete one if it is the same.';
     });
-    c.policies.push(...added); c.updated = new Date().toISOString(); saveCases();
-    toast(`Found ${added.length} polic${added.length > 1 ? 'ies' : 'y'}. Please check ${added.length > 1 ? 'each one' : 'it'}.`);
-    location.hash = '#/case/' + c.id + '/policy/' + added[0].id;
+    if (merged.length) { c.policies.push(...merged); c.updated = new Date().toISOString(); saveCases(); route(); }   // list behind the result box shows them
+
+    /* keep only the pages that failed, so they can be retried */
+    const failedSet = new Set(failed);
+    tray.items.forEach(it => { if (!failedSet.has(it) && it.url) URL.revokeObjectURL(it.url); });
+    tray.items = failed.map(it => Object.assign(it, {on: true}));
+    tray.notes = [];
+    const insurers = [...new Set(merged.map(p => p.insurer || 'Insurer not recognised'))];
+    const checks = PS.pendingChecks({policies: merged}).length;
+    const why = stop ? (AI_ERR[stop.code] || stop.code) : failed.length ? AI_ERR[failed[0].why] || 'Some pages could not be read.' : '';
+    const el = sheet(`<h3>${merged.length ? `Found ${merged.length} polic${merged.length > 1 ? 'ies' : 'y'}` : 'No policy details found'}</h3>
+      ${merged.length ? `<p>From ${insurers.length} insurer${insurers.length > 1 ? 's' : ''}: ${esc(insurers.join(', '))}.${checks ? ` <b>${checks} item${checks > 1 ? 's' : ''} to check</b>, marked orange.` : ''}</p>
+        <ul class="found">${merged.map(p => `<li><i style="background:${PS.insurerColor(p.insurer)}"></i><b>${esc(p.insurer || '?')}</b> ${esc(p.productName || '')}${p.policyNo ? ' · ' + esc(p.policyNo) : ''}${p.parts > 1 ? ` <span class="muted">(joined from ${p.parts} parts)</span>` : ''}</li>`).join('')}</ul>`
+      : '<p>The pages didn\'t show a policy the app could read. Try clearer photos or different PDF pages, or key it in.</p>'}
+      ${failed.length ? `<div class="checks"><b>${failed.length} page${failed.length > 1 ? 's' : ''} could not be read.</b> ${esc(why)}</div>` : ''}
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${failed.length && !stop ? '<button class="btn block" id="fRetry">Try those pages again</button>' : ''}
+        <button class="btn primary block" id="fOk">${merged.length ? 'Review policies' : 'OK'}</button></div>`);
+    $('#sheet').dataset.lock = '1';
+    const r = $('#fRetry', el); if (r) r.onclick = () => showTray(c);
+    $('#fOk', el).onclick = () => { clearTray(); closeSheet(); if (merged.length) { toast('Tap each policy marked orange to check it.'); route(); } };
   }
 
   /* ---------- policy editor (used for photo results and keying in) ---------- */
