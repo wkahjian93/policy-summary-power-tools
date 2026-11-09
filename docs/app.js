@@ -69,6 +69,7 @@
         <div class="card hero"><h2>New summary</h2><p>Snap the client's policy pages or portal screenshots, confirm what the app reads, and send a one-page summary.</p>
           <button class="btn primary block" id="new">+ New client summary</button></div>
         ${settings.name ? '' : '<div class="checks"><b>Add your name first.</b> It goes at the bottom of every PDF. <a href="#" id="set2">Open settings</a></div>'}
+        ${installTip()}
         <div id="syncLine"></div>
         <h2 class="muted" style="margin:6px 2px 8px;font-weight:600">MY CLIENTS</h2>
         ${list.length ? list.map(c => {
@@ -81,6 +82,7 @@
       </div>`;
     $('#new').onclick = newCase;
     updateSyncLine();
+    const it = $('#tipX'); if (it) it.onclick = () => { save('pspt.tipHidden', Date.now()); $('#installTip').remove(); };
     $('#set').onclick = openSettings;
     const s2 = $('#set2'); if (s2) s2.onclick = e => { e.preventDefault(); openSettings(); };
     const d = $('#demo'); if (d) d.onclick = e => { e.preventDefault(); const c = window.sampleCase(PS); cases.push(c); saveCases(); location.hash = '#/case/' + c.id; };
@@ -165,8 +167,8 @@
   }
   function signIn() {
     return new Promise(done => {
-      const el = sheet(`<h3>Sign in to read photos</h3><p>Reading photos uses the REDEFINE team server. Enter your name and the team code (the same one as Form Filler). Keying in works without signing in.</p>
-        <div class="f"><label for="gName">Your name</label><input id="gName" autocomplete="name" value="${esc(settings.name)}"></div>
+      const el = sheet(`<h3>Sign in once</h3><p>Reading photos/PDFs and syncing use the REDEFINE team server. Enter your name and the team code (the same one as Form Filler). You stay signed in on this device. Keying in works without signing in.</p>
+        <div class="f"><label for="gName">Your name</label><input id="gName" autocomplete="name" value="${esc(settings.name || (load('pspt.session', null) || load('rff.session', null) || {}).name || (syncCfg || {}).name || '')}"></div>
         <div class="f"><label for="gCode">Team code</label><input id="gCode" type="password" autocomplete="current-password"></div>
         <p class="muted" id="gMsg" role="alert" style="color:var(--err);min-height:18px"></p>
         <div class="row"><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok>Sign in</button></div>`);
@@ -175,7 +177,7 @@
         const who = {name: $('#gName', el).value.trim(), code: $('#gCode', el).value.trim()};
         if (!who.name || !who.code) { $('#gMsg', el).textContent = 'Enter both.'; return; }
         $('[data-ok]', el).disabled = true; $('[data-ok]', el).textContent = 'Checking…';
-        try { await post({op: 'login'}, who); save('pspt.session', who); closeSheet(); done(true); }
+        try { await post({op: 'login'}, who); save('pspt.session', who); if (!settings.name) { settings.name = who.name; save('pspt.settings', settings); } closeSheet(); done(true); }
         catch (e) {
           $('#gMsg', el).textContent = e.code === 'unauthorized' ? 'That team code is not right.' : e.code === 'locked' ? 'Too many wrong tries. Wait 15 minutes.' : 'Could not reach the team server. Check your connection.';
           $('[data-ok]', el).disabled = false; $('[data-ok]', el).textContent = 'Sign in';
@@ -293,7 +295,7 @@
       }
     } catch (e) {
       closeSheet(); urls.forEach(URL.revokeObjectURL);
-      if (e.code === 'unauthorized') { localStorage.setItem('pspt.session', 'null'); toast('Please sign in again.'); return; }
+      if (e.code === 'unauthorized') { if (await signIn()) toast('Signed in. Tap Snap / Upload again.'); return; }
       sheet(`<h3>Could not read it</h3><p>${esc(AI_ERR[e.code] || 'Something went wrong (' + (e.code || 'error') + '). Try again or key it in.')}</p><button class="btn block" data-x>OK</button>`, s => { $('[data-x]', s).onclick = closeSheet; });
       return;
     }
@@ -530,7 +532,8 @@
 
   function scheduleSync() { if (!syncCfg) return; clearTimeout(syncTimer); syncTimer = setTimeout(syncNow, 1500); }
   async function syncNow() {
-    if (!syncCfg || !session() || !CFG.api || !navigator.onLine) return;
+    if (!syncCfg || !CFG.api || !navigator.onLine) return;
+    if (!session()) { syncState = 'signin'; updateSyncLine(); return; }
     if (syncing) return syncing;
     syncing = (async () => {
       try {
@@ -580,10 +583,15 @@
       const el = sheet(`<div class="sheet-top"><h3>Sync my devices</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div>
         <p>On as <b>${esc(syncCfg.name)}</b>. Clients you add or change here appear on your other devices that use the same name and sync passphrase. ${syncCfg.last ? 'Last synced ' + esc(new Date(syncCfg.last).toLocaleString('en-GB')) + '.' : ''}</p>
         ${syncState === 'server' ? '<div class="checks">The team server needs its update before sync can run. Your clients are safe on this device.</div>' : ''}
-        <div style="display:flex;flex-direction:column;gap:8px"><button class="btn primary block" id="sNow">Sync now</button><button class="btn ghost block" id="sOff">Turn off sync on this device</button></div>`);
-      $('#sNow', el).onclick = async () => { $('#sNow', el).textContent = 'Syncing…'; await syncNow(); closeSheet(); toast(syncState ? 'Sync could not finish' : 'Synced'); route(); };
+        ${syncState === 'signin' ? '<div class="checks">Sync is paused because the team sign-in was not accepted (the team code may have changed). Sign in again to continue. Your sync stays on.</div>' : ''}
+        <div style="display:flex;flex-direction:column;gap:8px">${syncState === 'signin' ? '<button class="btn primary block" id="sIn">Sign in again</button>' : '<button class="btn primary block" id="sNow">Sync now</button>'}<button class="btn block" data-close>Close</button></div>
+        <button class="tinylink" id="sOff">Stop syncing this device…</button>`);
+      const sn = $('#sNow', el); if (sn) sn.onclick = async () => { sn.textContent = 'Syncing…'; await syncNow(); closeSheet(); toast(syncState ? 'Sync could not finish' : 'Synced'); route(); };
+      const si = $('#sIn', el); if (si) si.onclick = async () => { if (await signIn()) { syncState = ''; await syncNow(); toast(syncState ? 'Sync could not finish' : 'Synced'); route(); } };
       $('#sOff', el).onclick = async () => {
-        if (await confirmBox('Turn off sync here?', 'Clients stay on this device. Your synced copy stays locked on the server for your other devices.', 'Turn off')) { syncCfg = null; localStorage.removeItem('pspt.sync'); route(); }
+        if (!(await confirmBox('Stop syncing this device?', 'This device will no longer receive changes from your other devices, and its changes won\'t reach them. Clients already here stay. To sync again you will need your sync passphrase.', 'Stop syncing', true))) return;
+        if (!(await confirmBox('Are you sure?', 'Most agents never need this. Only stop syncing if this device is being given away or shared.', 'Yes, stop syncing', true))) return;
+        syncCfg = null; localStorage.removeItem('pspt.sync'); route();
       };
       return;
     }
@@ -612,6 +620,20 @@
     };
   }
 
+  /* ---------- staying signed in ----------
+     On iPhone/iPad, Safari and the home-screen app keep separate storage, and Safari clears a website's
+     storage after about 7 days without use. The home-screen app keeps it, so we nudge agents to install. */
+  const standalone = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+  const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  function installTip() {
+    if (standalone()) return '';
+    const hidden = load('pspt.tipHidden', 0);
+    if (hidden && Date.now() - hidden < 3 * 864e5) return '';   // ask again after 3 days
+    const how = isIOS() ? 'In Safari tap <b>Share</b> <span aria-hidden="true">⬆︎</span> then <b>Add to Home Screen</b>.' : 'Tap the browser menu <b>⋮</b> then <b>Add to Home screen</b> / <b>Install app</b>.';
+    return `<div class="checks" id="installTip" style="position:relative;padding-right:40px"><b>Stay signed in: add this app to your Home Screen.</b> ${how} Then always open it from the icon. Opening it in the browser instead can sign you out and hide your clients.<button class="xbtn" id="tipX" aria-label="Hide tip" style="position:absolute;top:8px;right:8px;width:30px;height:30px;font-size:13px">✕</button></div>`;
+  }
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+
   function openSettings() {
     const s = session();
     const el = sheet(`<div class="sheet-top"><h3>Settings</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div><p>Shown at the bottom of every PDF.</p>
@@ -622,14 +644,17 @@
       <div class="f"><label for="sC">Guideline CI (× income)</label><input id="sC" inputmode="decimal" value="${settings.guide.ci}"></div></div>
       <p class="muted" style="margin-bottom:12px">New clients use these multiples. ${Object.keys(learned).length} benefit names remembered. ${s ? 'Signed in to the team server as ' + esc(s.name) + '.' : 'Not signed in (needed only for reading photos).'}</p>
       <div style="display:flex;flex-direction:column;gap:8px"><div class="row"><button class="btn" data-close>Cancel</button><button class="btn primary" data-ok>Save</button></div>
-      ${s ? '<button class="btn ghost block" id="out">Sign out of team server</button>' : ''}
-      ${Object.keys(learned).length ? '<button class="btn ghost block" id="forget">Forget remembered benefit names</button>' : ''}</div>`);
+      ${Object.keys(learned).length ? '<button class="btn ghost block" id="forget">Forget remembered benefit names</button>' : ''}</div>
+      ${s ? '<button class="tinylink" id="out">Sign out of this device…</button>' : ''}`);
     $('[data-ok]', el).onclick = () => {
       settings = {name: $('#sN', el).value.trim(), title: $('#sT', el).value.trim(), phone: $('#sP', el).value.trim(),
         guide: {death: PS.parseAmount($('#sD', el).value).value || 10, ci: PS.parseAmount($('#sC', el).value).value || 5}};
       save('pspt.settings', settings); closeSheet(); toast('Saved'); route();
     };
-    const o = $('#out', el); if (o) o.onclick = () => { localStorage.setItem('pspt.session', 'null'); closeSheet(); toast('Signed out'); };
+    const o = $('#out', el); if (o) o.onclick = async () => {
+      if (!(await confirmBox('Sign out of this device?', 'You will need the team code again to read photos and PDFs' + (syncCfg ? ', and sync will pause until you sign back in' : '') + '. Clients on this device stay. You normally never need to sign out.', 'Sign out', true))) return;
+      localStorage.setItem('pspt.session', 'null'); toast('Signed out'); route();
+    };
     const f = $('#forget', el); if (f) f.onclick = async () => { if (await confirmBox('Forget remembered names?', 'The app will go back to its built-in reading of benefit names.', 'Forget')) { learned = {}; save('pspt.learned', learned); toast('Done'); } };
   }
 
