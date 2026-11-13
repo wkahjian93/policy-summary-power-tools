@@ -1,4 +1,23 @@
-# Policy Summary Power Tools: how to use it
+# REDEFINE On Field: how to use it
+
+On Field (formerly Policy Summary Power Tools) is one app for the field: record a client meeting by voice, send a personal follow-up PDF and WhatsApp message, keep every client in your farm, and analyse policies. The link is the same as before.
+
+## Record a meeting (the main thing)
+
+1. **Set up My profile once** (Settings, then 👤 My profile): photo, title, phone, email, "About me", "Why I do insurance". It goes on the last page of every follow-up PDF.
+2. After a meeting, tap **🎙 Record a meeting** (home screen, or inside a client). Speak for 1 to 2 minutes, the way you would tell your leader: who you met, what they care about, what you explained, what you suggested, and the next step. Mix Malaysian Mandarin, Hokkien, Cantonese, English and Malay freely. You can also **Type instead** (or use the keyboard mic), and add photos of notes or drawings.
+3. **Check the text.** Fix names and numbers. Hokkien and Cantonese words may be spelled oddly; the AI understands them, but numbers must be right. Pick the letter language (中文 / English / Bahasa).
+4. **Draft follow-up.** The AI writes a personal letter in your voice, picks up to 3 REDEFINE concept pages that match what you discussed, writes the WhatsApp message, and fills in the farm record.
+5. **Review.** Every number the AI heard is listed; tick each one after checking, and the PDF button stays locked until you do. Edit any text, add or remove concept pages.
+6. **Create PDF & send.** The message is copied; share the PDF to the client in WhatsApp and paste the message. Or tap **Save only** to keep the record without a PDF.
+
+The follow-up PDF: a personal letter (what we talked about, what matters to you, my suggestion and why, next step), the chosen concept pages, photos of your notes, and an About me page with your name card. Concept pages come from the REDEFINE medical card and income protection lessons; their numbers are marked illustrative and they name no products.
+
+## Client farm
+
+Every client has a farm card: a **Before you meet** brief (last meeting, family and work, what they care about, concerns, agreed next step), a timeline of every meeting, and their details. Only names or nicknames are kept: no phone, IC or medical details. The AI is told to leave those out and the app also strips IC and phone numbers. Clients with a follow-up date in the next 3 days or overdue appear under **Follow up soon** on the home screen. With sync on, the farm syncs between your iPad and phone, locked with your passphrase.
+
+## Policy summary
 
 **The pain:** a policy summary means gathering every policy from every insurer, working out what each one covers and adding it all up by hand. That takes hours.
 **The fix:** snap or key in each policy, confirm anything the app wasn't sure about, and send the client a polished PDF in minutes.
@@ -52,7 +71,7 @@ Clients are locked with your passphrase before they leave the device. The server
 ## For maintenance
 
 - `docs/` is the app. `logic.js` handles recognition and calculations, `report.js` builds the PDF pages, `app.js` runs the screens, and `config.js` holds the server address.
-- `node test.js` runs 65 checks covering recognition, messy numbers, the never-guess rules and the summary maths.
+- `node test.js` runs 84 checks covering recognition, messy numbers, the never-guess rules and the summary maths.
 - `node serve.js` previews the app at http://localhost:5193.
 - `samples/` holds the sample PDF made by the app.
 - `node test-sync-server.js` runs the real team server code in memory on port 5194 to test sync (open localhost:5194 and 127.0.0.1:5194 as two devices; team code `test-team-code`).

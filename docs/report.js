@@ -153,5 +153,56 @@
     return pdf.output('blob');
   }
 
-  root.Report = {build, toPDF};
+  /* ---------- On Field: personal follow-up PDF after a meeting ---------- */
+  const FU_L = {
+    zh: {prep: '专属为你准备', disc: '今天我们聊了', matters: '对你来说重要的', rec: '我的建议，和原因', next: '下一步', notes: '我们的讨论笔记', about: '关于我', why: '我为什么做保险', contact: '联络我', concept: '概念分享', illus: '数字只作说明用途，并非报价或保证。'},
+    en: {prep: 'Prepared for', disc: 'What we talked about', matters: 'What matters to you', rec: 'What I suggest, and why', next: 'Next step', notes: 'Our discussion notes', about: 'About me', why: 'Why I do this work', contact: 'Contact me', concept: 'An idea worth sharing', illus: 'Figures are illustrative only, not a quotation or guarantee.'},
+    ms: {prep: 'Disediakan untuk', disc: 'Apa yang kita bincangkan', matters: 'Apa yang penting bagi anda', rec: 'Cadangan saya, dan sebabnya', next: 'Langkah seterusnya', notes: 'Nota perbincangan kita', about: 'Tentang saya', why: 'Kenapa saya buat kerja ini', contact: 'Hubungi saya', concept: 'Idea untuk dikongsi', illus: 'Angka hanya sebagai ilustrasi, bukan sebut harga atau jaminan.'}
+  };
+  function fuFoot(agent, L) {
+    return `<footer class="rp-foot"><div>${esc(agent.name || '')}${agent.title ? ' · ' + esc(agent.title) : ''}${agent.phone ? ' · ' + esc(agent.phone) : ''}</div><p>This note summarises our conversation for your reference. It is not a policy contract, quotation or offer. Any plan, premium and benefit is subject to the insurer's approved documents, terms and underwriting. ${esc(L.illus)}</p></footer>`;
+  }
+  function fuHead(title, page, pages) {
+    return `<header class="rp-head"><img src="logo.png" alt="REDEFINE" class="rp-logo"><div class="rp-head-r"><b>${esc(title)}</b><span>${fmtDate()} · ${page} / ${pages}</span></div></header>`;
+  }
+  const paras = a => (a || []).filter(Boolean).map(p => `<p>${esc(p)}</p>`).join('');
+  const bullets = a => (a || []).filter(Boolean).length ? `<ul>${a.filter(Boolean).map(p => `<li>${esc(p)}</li>`).join('')}</ul>` : '';
+  /* o: {clientName, draft, agent: {name,title,phone,email,photo,intro,why,background}, lang, photos: [dataURL], concepts: [concept objects]} */
+  function buildFollowUp(o) {
+    const L = FU_L[o.lang] || FU_L.zh, d = o.draft, a = o.agent, l = d.letter, out = [];
+    const photoPages = [];
+    for (let i = 0; i < (o.photos || []).length; i += 4) photoPages.push(o.photos.slice(i, i + 4));
+    const pages = 1 + o.concepts.length + photoPages.length + 1;
+    let n = 1;
+    out.push(`<div class="rp-page fu">${fuHead(l.title || L.prep, n++, pages)}
+      <div class="rp-client"><span>${esc(L.prep)}</span><h1>${esc(o.clientName)}</h1></div>
+      ${l.title ? `<h2 class="fu-title">${esc(l.title)}</h2>` : ''}
+      ${l.greeting ? `<p class="fu-greet">${esc(l.greeting)}</p>` : ''}
+      ${(l.discussed || []).length ? `<section class="fu-sec"><h3>${esc(L.disc)}</h3>${paras(l.discussed)}</section>` : ''}
+      ${(l.matters || []).length ? `<section class="fu-sec fu-box"><h3>${esc(L.matters)}</h3>${bullets(l.matters)}</section>` : ''}
+      ${l.recommendation ? `<section class="fu-sec"><h3>${esc(L.rec)}</h3><p>${esc(l.recommendation)}</p></section>` : ''}
+      ${l.nextStep ? `<section class="fu-sec fu-next"><h3>${esc(L.next)}</h3><p>${esc(l.nextStep)}</p></section>` : ''}
+      ${l.closing ? `<p class="fu-close">${esc(l.closing)}</p>` : ''}
+      <div class="fu-sign">${a.photo ? `<img src="${a.photo}" alt="">` : ''}<div><b>${esc(a.name || '')}</b><span>${esc(a.title || '')}</span></div></div>
+      ${fuFoot(a, L)}</div>`);
+    o.concepts.forEach(k => out.push(`<div class="rp-page fu">${fuHead(L.concept, n++, pages)}
+      <div class="fu-concept"><span class="fu-tag">${k.group === 'income' ? 'Income protection' : 'Medical protection'}</span><h2>${esc(k.zh)}</h2><h4>${esc(k.en)}</h4>
+      <div class="fu-art">${k.art}</div>
+      <ol>${k.lines.map(([zh, en]) => `<li><b>${esc(zh)}</b><span>${esc(en)}</span></li>`).join('')}</ol>
+      <blockquote><b>${esc(k.key)}</b><span>${esc(k.keyEn)}</span></blockquote></div>
+      ${fuFoot(a, L)}</div>`));
+    photoPages.forEach(group => out.push(`<div class="rp-page fu">${fuHead(L.notes, n++, pages)}
+      <h2 class="fu-title">${esc(L.notes)}</h2><div class="fu-photos n${group.length}">${group.map(src => `<div><img src="${src}" alt=""></div>`).join('')}</div>
+      ${fuFoot(a, L)}</div>`));
+    out.push(`<div class="rp-page fu">${fuHead(L.about, n++, pages)}
+      <div class="fu-about">${a.photo ? `<img src="${a.photo}" alt="">` : ''}<div><h2>${esc(a.name || '')}</h2><p class="fu-role">${esc(a.title || '')}</p></div></div>
+      ${a.intro ? `<section class="fu-sec"><h3>${esc(L.about)}</h3><p>${esc(a.intro)}</p></section>` : ''}
+      ${a.why ? `<section class="fu-sec fu-box"><h3>${esc(L.why)}</h3><p>${esc(a.why)}</p></section>` : ''}
+      ${a.background ? `<section class="fu-sec"><p>${esc(a.background)}</p></section>` : ''}
+      <section class="fu-card"><img src="logo.png" alt=""><div><b>${esc(a.name || '')}</b><span>${esc(a.title || '')}</span>${a.phone ? `<span>📞 ${esc(a.phone)}</span>` : ''}${a.email ? `<span>✉️ ${esc(a.email)}</span>` : ''}</div></section>
+      ${fuFoot(a, L)}</div>`);
+    return out;
+  }
+
+  root.Report = {build, toPDF, buildFollowUp};
 })(this);

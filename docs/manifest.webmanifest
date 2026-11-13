@@ -1,7 +1,7 @@
 {
-  "name": "Policy Summary Power Tools",
-  "short_name": "Policy Summary",
-  "description": "Snap a client's policies, confirm, and send a one-page summary PDF.",
+  "name": "REDEFINE On Field",
+  "short_name": "On Field",
+  "description": "Record a client meeting, send a personal follow-up PDF, keep your client farm and analyse policies.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

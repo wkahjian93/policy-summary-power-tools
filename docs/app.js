@@ -52,6 +52,7 @@
     closeSheet(); leaveGuard = null;
     const h = location.hash.replace(/^#\/?/, '').split('/');
     window.scrollTo(0, 0);
+    if (h[0] === 'record') return recordScreen(h[1] && getCase(h[1]) ? h[1] : null);
     if (h[0] === 'case' && getCase(h[1])) {
       if (h[2] === 'policy') return editPolicy(getCase(h[1]), h[3]);
       if (h[2] === 'summary') return summary(getCase(h[1]));
@@ -64,23 +65,35 @@
   /* ---------- home ---------- */
   function home() {
     const list = cases.slice().sort((a, b) => (b.updated || '').localeCompare(a.updated || ''));
-    app.innerHTML = `<header class="bar"><div class="brand"><img src="logo.png" alt=""><div><b>Policy Summary</b><span>POWER TOOLS</span></div></div><button class="ib" id="set" aria-label="Settings">${ICONS.gear}</button></header>
+    const due = dueList(), q = (home.q || '').toLowerCase();
+    const shown = q ? list.filter(c => (c.client.name + ' ' + (c.client.nickname || '')).toLowerCase().includes(q)) : list;
+    app.innerHTML = `<header class="bar"><div class="brand"><img src="logo.png" alt=""><div><b>On Field</b><span>REDEFINE</span></div></div><button class="ib" id="set" aria-label="Settings">${ICONS.gear}</button></header>
       <div class="wrap">
-        <div class="card hero"><h2>New summary</h2><p>Snap the client's policy pages or portal screenshots, confirm what the app reads, and send a one-page summary.</p>
-          <button class="btn primary block" id="new">+ New client summary</button></div>
+        <div class="card hero"><h2>Just met a client?</h2><p>Speak for 1–2 minutes. On Field writes the follow-up PDF and WhatsApp message, and saves the meeting to your client farm.</p>
+          <button class="btn primary block rec-big" id="recNew">🎙 Record a meeting</button>
+          ${rec && (rec.transcript || rec.draft) ? '<button class="btn block" id="recResume" style="margin-top:8px">Continue unfinished note</button>' : ''}
+          <button class="btn block ghost-l" id="new">+ New client · policy summary</button></div>
         ${settings.name ? '' : '<div class="checks"><b>Add your name first.</b> It goes at the bottom of every PDF. <a href="#" id="set2">Open settings</a></div>'}
+        ${settings.name && !settings.intro ? '<div class="checks"><b>Set up "My profile" once.</b> Your photo, intro and why you do insurance go on every follow-up PDF. <a href="#" id="prof2">Open My profile</a></div>' : ''}
+        ${due.length ? `<h2 class="muted" style="margin:6px 2px 8px;font-weight:600">FOLLOW UP SOON</h2>${due.map(({c, m}) => `<a class="item" href="#/case/${c.id}"><span class="stripe" style="background:${m.followUpDate < todayISO() ? 'var(--err)' : 'var(--gold)'}"></span><div class="t"><b>${esc(c.client.name)}</b><span>${esc(m.nextStep || FU.typeLabel(m.type))}</span></div><div class="amt">${esc(m.followUpDate)}<small>${m.followUpDate < todayISO() ? 'overdue' : m.followUpDate === todayISO() ? 'today' : 'soon'}</small></div></a>`).join('')}` : ''}
         ${installTip()}
         <div id="syncLine"></div>
-        <h2 class="muted" style="margin:6px 2px 8px;font-weight:600">MY CLIENTS</h2>
-        ${list.length ? list.map(c => {
-          const s = PS.summarise(c), n = PS.pendingChecks(c).length;
-          return `<a class="item" href="#/case/${c.id}"><div class="t"><b>${esc(c.client.name || 'Unnamed client')}${c.sample ? ' <span class="pill grey">Sample</span>' : ''}</b><span>${c.policies.length} polic${c.policies.length === 1 ? 'y' : 'ies'} · updated ${new Date(c.updated).toLocaleDateString('en-GB')}</span></div>
-            <div class="amt">${PS.rm(s.cats.death.total, {short: true})}<small>${n ? `<span class="pill warn">${n} to check</span>` : 'death cover'}</small></div></a>`;
-        }).join('') : '<div class="empty">No clients yet.<br>Tap <b>New client summary</b>, or <a href="#" id="demo">open a sample</a> to see the format.</div>'}
+        <h2 class="muted" style="margin:6px 2px 8px;font-weight:600">MY CLIENTS (${list.length})</h2>
+        ${list.length > 6 ? `<div class="f"><input id="qC" type="search" placeholder="Search clients" value="${esc(home.q || '')}"></div>` : ''}
+        ${shown.length ? shown.map(c => {
+          const s = PS.summarise(c), n = PS.pendingChecks(c).length, ms = c.meetings || [], last = ms[ms.length - 1];
+          const sub = [c.client.nickname, last ? 'met ' + last.date : '', c.policies.length ? c.policies.length + ' polic' + (c.policies.length === 1 ? 'y' : 'ies') : ''].filter(Boolean).join(' · ') || 'updated ' + new Date(c.updated).toLocaleDateString('en-GB');
+          return `<a class="item" href="#/case/${c.id}"><div class="t"><b>${esc(c.client.name || 'Unnamed client')}${c.sample ? ' <span class="pill grey">Sample</span>' : ''}</b><span>${esc(sub)}</span></div>
+            <div class="amt">${c.policies.length ? PS.rm(s.cats.death.total, {short: true}) : ms.length}<small>${n ? `<span class="pill warn">${n} to check</span>` : c.policies.length ? 'death cover' : 'meeting' + (ms.length === 1 ? '' : 's')}</small></div></a>`;
+        }).join('') : list.length ? '<div class="empty">No client matches.</div>' : '<div class="empty">No clients yet.<br>Tap <b>Record a meeting</b> after you meet someone, or <a href="#" id="demo">open a sample</a> to see a policy summary.</div>'}
         ${list.length && !list.some(c => c.sample) ? '<p class="muted" style="text-align:center;margin:10px 0"><a href="#" id="demo">Open the sample client</a></p>' : ''}
         <p class="muted" style="text-align:center;margin:18px 10px">${syncCfg ? 'Clients are locked with your sync passphrase before syncing. Photos are read and then discarded.' : 'Client details are saved on this device only. Photos are read and then discarded.'}</p>
       </div>`;
     $('#new').onclick = newCase;
+    $('#recNew').onclick = () => startRecord(null);
+    const rr = $('#recResume'); if (rr) rr.onclick = () => { location.hash = '#/record' + (rec.caseId ? '/' + rec.caseId : ''); };
+    const p2 = $('#prof2'); if (p2) p2.onclick = e => { e.preventDefault(); openProfile(); };
+    const qc = $('#qC'); if (qc) qc.oninput = () => { home.q = qc.value; const pos = qc.selectionStart; home(); const n = $('#qC'); n.focus(); n.setSelectionRange(pos, pos); };
     updateSyncLine();
     const it = $('#tipX'); if (it) it.onclick = () => { save('pspt.tipHidden', Date.now()); $('#installTip').remove(); };
     $('#set').onclick = openSettings;
@@ -111,9 +124,11 @@
     const s = PS.summarise(c), checks = PS.pendingChecks(c);
     app.innerHTML = bar(c.client.name || 'Client', '#/', `<button class="ib" id="del" aria-label="Delete client">${ICONS.trash}</button>`) + `
       <div class="wrap">
-        <div class="card hero"><h2>So far</h2>
+        ${farmCard(c)}
+        <h2 class="muted" style="margin:14px 2px 8px;font-weight:600">POLICY SUMMARY</h2>
+        ${c.policies.length ? `<div class="card hero"><h2>So far</h2>
           <div class="stat"><div><span>Death</span><b>${PS.rm(s.cats.death.total, {short: true})}</b></div><div><span>CI</span><b>${PS.rm(s.cats.ci.total, {short: true})}</b></div><div><span>Medical/yr</span><b>${s.medical.annual != null ? PS.rm(s.medical.annual, {short: true}) : '—'}</b></div></div>
-        </div>
+        </div>` : ''}
         <button class="btn primary block addbig" id="addP">${ICONS.cam}<span><b>Add policy pages</b><small>Photos, screenshots &amp; PDFs · many policies, any insurer</small></span></button>
         <div class="big3">
           <button class="btn sm" id="snap">${ICONS.cam.replace('<svg ', '<svg width="18" height="18" ')}Take photo</button>
@@ -139,9 +154,10 @@
           <p class="muted">With income, the summary compares cover with a guideline of ${c.guide.death}× income for death/TPD and ${c.guide.ci}× for CI. Change the multiples in Settings.</p>
         </div>
       </div>
-      <div class="dock"><a class="btn navy" href="#/case/${c.id}/summary" ${c.policies.length ? '' : 'aria-disabled="true" style="opacity:.45;pointer-events:none"'}>See summary &amp; PDF</a></div>`;
+      ${c.policies.length ? `<div class="dock"><a class="btn navy" href="#/case/${c.id}/summary">See policy summary &amp; PDF</a></div>` : ''}`;
     $('#key').onclick = () => { location.hash = '#/case/' + c.id + '/policy/new'; };
-    $('#addP').onclick = () => { if (!tray || tray.caseId !== c.id) { clearTray(); tray = {caseId: c.id, items: [], notes: []}; } showTray(c); };
+    wireFarm(c);
+    $('#addP').onclick =() => { if (!tray || tray.caseId !== c.id) { clearTray(); tray = {caseId: c.id, items: [], notes: []}; } showTray(c); };
     $('#snap').onclick = () => $('#camIn').click();
     $('#pics').onclick = () => $('#file').click();
     $('#pdfB').onclick = () => $('#pdfIn').click();
@@ -189,8 +205,8 @@
       };
     });
   }
-  async function toJpegB64(file) {
-    const bmp = await createImageBitmap(file), k = Math.min(1, 2000 / Math.max(bmp.width, bmp.height));
+  async function toJpegB64(file, maxSide) {
+    const bmp = await createImageBitmap(file), k = Math.min(1, (maxSide || 2000) / Math.max(bmp.width, bmp.height));
     const cv = document.createElement('canvas'); cv.width = Math.round(bmp.width * k); cv.height = Math.round(bmp.height * k);
     const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height); g.drawImage(bmp, 0, 0, cv.width, cv.height);
     return cv.toDataURL('image/jpeg', 0.85).split(',')[1];
@@ -668,6 +684,343 @@
     };
   }
 
+  /* ======================= REDEFINE On Field: record a meeting -> follow-up PDF + farm ======================= */
+  const FU = window.FU, KC = window.REDEFINE_CONCEPTS;
+  const todayISO = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+  /* the work in progress survives switching apps or a reload (no audio or photos kept) */
+  let rec = load('pspt.rec', null);
+  const saveRec = () => save('pspt.rec', rec ? Object.assign({}, rec, {photos: undefined}) : null);
+  let recPhotos = [];   // data URLs of note photos, memory only
+  let mediaRec = null, recTimer = null;
+
+  async function startRecord(caseId) {
+    if (rec && (rec.transcript || rec.draft)) {
+      if (rec.caseId === (caseId || null)) { location.hash = '#/record' + (caseId ? '/' + caseId : ''); return; }
+      const other = rec.caseId && getCase(rec.caseId);
+      if (!(await confirmBox('You have an unfinished note', `There is an unsent note${other ? ' for ' + esc(other.client.name) : ''}. Start a new one and discard it?`, 'Discard and start new', true))) {
+        location.hash = '#/record' + (rec.caseId ? '/' + rec.caseId : ''); return;
+      }
+    }
+    rec = {caseId: caseId || null, step: 'capture', transcript: '', lang: settings.fuLang || 'zh', draft: null, started: Date.now()};
+    recPhotos = []; saveRec();
+    location.hash = '#/record' + (caseId ? '/' + caseId : '');
+  }
+
+  function recordScreen(caseId) {
+    if (!rec || rec.caseId !== (caseId || null)) { rec = {caseId: caseId || null, step: 'capture', transcript: '', lang: settings.fuLang || 'zh', draft: null}; recPhotos = []; saveRec(); }
+    const c = caseId ? getCase(caseId) : null;
+    const back = c ? '#/case/' + c.id : '#/';
+    const steps = ['capture', 'transcript', 'review'];
+    const stepBar = `<div class="steps">${['Speak', 'Check text', 'Review & send'].map((s, i) => `<span class="${steps.indexOf(rec.step) >= i ? 'on' : ''}">${i + 1}. ${s}</span>`).join('')}</div>`;
+    const discard = `<button class="ib" id="recX" aria-label="Discard">${ICONS.trash}</button>`;
+    if (rec.step === 'review' && rec.draft) return reviewScreen(c, back, stepBar, discard);
+    if (rec.step === 'transcript') {
+      app.innerHTML = bar('Record a meeting', back, discard) + `<div class="wrap">${stepBar}
+        <div class="card"><h2>${c ? 'Meeting with ' + esc(c.client.name) : 'Your note'}</h2>
+          <p class="muted" style="margin-bottom:8px">Fix any wrong names or numbers. Hokkien and Cantonese words may be spelled oddly; the AI understands them, but numbers must be right.</p>
+          <div class="f"><textarea id="tx" rows="10">${esc(rec.transcript)}</textarea></div>
+          <button class="btn sm" id="more">🎙 Add more by voice</button>
+        </div>
+        <div class="card"><h2>Letter language</h2>${langChips()}</div>
+        ${photoStrip()}
+      </div>
+      <div class="dock"><button class="btn primary" id="draft">✨ Draft follow-up</button></div>`;
+      wireCommon(c);
+      $('#tx').addEventListener('input', () => { rec.transcript = $('#tx').value; saveRec(); });
+      $('#more').onclick = () => { rec.step = 'capture'; saveRec(); route(); };
+      $('#draft').onclick = () => draftWithAI(c);
+      return;
+    }
+    /* capture */
+    app.innerHTML = bar('Record a meeting', back, rec.transcript ? discard : '') + `<div class="wrap">${stepBar}
+      ${c ? '' : `<div class="card"><h2>Which client?</h2><div class="f"><select id="pickC"><option value="">New client (the app takes the name from what you say)</option>${cases.filter(x => !x.sample).sort((a, b) => (b.updated || '').localeCompare(a.updated || '')).map(x => `<option value="${x.id}">${esc(x.client.name)}${x.client.nickname ? ' (' + esc(x.client.nickname) + ')' : ''}</option>`).join('')}</select></div></div>`}
+      <div class="card mic-card">
+        <p class="muted">Tell it like you'd tell your leader: who you met, what they care about, what you explained, what you suggested, and the next step. Mix Mandarin, Hokkien, Cantonese, English and Malay freely.</p>
+        <button class="mic" id="mic" aria-label="Start recording"><span></span></button>
+        <div class="mic-time" id="micT">Tap to record · up to 5 min</div>
+        ${rec.transcript ? `<p class="muted" style="margin-top:8px">${rec.transcript.length} characters recorded so far. Recording again adds to it.</p>` : ''}
+      </div>
+      <details class="card"><summary><b>Type instead</b> <span class="muted">(or use your keyboard's mic)</span></summary>
+        <div class="f" style="margin-top:8px"><textarea id="typed" rows="6" placeholder="今天见陈先生, 35岁, 两个孩子, 担心 medical 不够……"></textarea></div>
+        <button class="btn sm" id="useTyped">Use this text</button></details>
+      ${photoStrip()}
+      ${rec.transcript ? '<p style="text-align:center"><button class="btn" id="toTx">Next: check the text →</button></p>' : ''}
+    </div>`;
+    wireCommon(c);
+    const pick = $('#pickC'); if (pick) pick.onchange = () => { if (pick.value) { const id = pick.value; rec.caseId = id; saveRec(); location.hash = '#/record/' + id; } };
+    $('#mic').onclick = () => (mediaRec ? stopMic() : startMic(c));
+    $('#useTyped').onclick = () => { const t = $('#typed').value.trim(); if (!t) return; rec.transcript = (rec.transcript ? rec.transcript + '\n' : '') + t; rec.step = 'transcript'; saveRec(); route(); };
+    const tt = $('#toTx'); if (tt) tt.onclick = () => { rec.step = 'transcript'; saveRec(); route(); };
+  }
+
+  function langChips() {
+    return `<div class="seg" id="langs">${[['zh', '中文'], ['en', 'English'], ['ms', 'Bahasa']].map(([k, l]) => `<button type="button" data-l="${k}" aria-pressed="${rec.lang === k}">${l}</button>`).join('')}</div>`;
+  }
+  function photoStrip() {
+    return `<div class="card"><h2>Photos of notes or drawings <span class="muted">(optional, go into the PDF)</span></h2>
+      <div class="thumbs">${recPhotos.map((p, i) => `<button type="button" class="thx" data-i="${i}" aria-label="Remove photo"><img src="${p}" alt=""><span>✕</span></button>`).join('')}</div>
+      <div class="row"><button class="btn sm" id="phCam">${ICONS.cam.replace('<svg ', '<svg width="18" height="18" ')}Take photo</button><button class="btn sm" id="phPick">+ Photos</button></div>
+      <input type="file" id="phCamIn" accept="image/*" capture="environment" hidden><input type="file" id="phIn" accept="image/*" multiple hidden></div>`;
+  }
+  function wireCommon(c) {
+    const x = $('#recX'); if (x) x.onclick = async () => {
+      if (!(await confirmBox('Discard this note?', 'The recording text and draft will be deleted. Nothing has been saved to the client yet.', 'Discard', true))) return;
+      rec = null; recPhotos = []; saveRec(); location.hash = c ? '#/case/' + c.id : '#/';
+    };
+    $$('#langs button').forEach(b => b.onclick = () => { rec.lang = b.dataset.l; saveRec(); $$('#langs button').forEach(y => y.setAttribute('aria-pressed', y === b)); });
+    $$('.thx').forEach(b => b.onclick = () => { recPhotos.splice(+b.dataset.i, 1); route(); });
+    const add = async files => {
+      for (const f of files) { try { recPhotos.push('data:image/jpeg;base64,' + await toJpegB64(f, 1400)); } catch (e) { toast('One photo could not be opened.'); } }
+      route();
+    };
+    $('#phCam').onclick = () => $('#phCamIn').click();
+    $('#phPick').onclick = () => $('#phIn').click();
+    ['#phCamIn', '#phIn'].forEach(s => { $(s).onchange = e => { const f = [...e.target.files]; e.target.value = ''; if (f.length) add(f); }; });
+  }
+
+  /* ---------- microphone ---------- */
+  async function startMic(c) {
+    if (!navigator.mediaDevices || !window.MediaRecorder) return toast('This browser cannot record. Use "Type instead" with your keyboard mic.');
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}}); }
+    catch (e) { return sheet('<h3>Microphone not allowed</h3><p>Allow the microphone for this app in your phone settings (Safari / Chrome → this site → Microphone), or use "Type instead" with your keyboard mic.</p><button class="btn block" data-close>OK</button>'); }
+    const type = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'].find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || '';
+    const chunks = [];
+    mediaRec = new MediaRecorder(stream, type ? {mimeType: type, audioBitsPerSecond: 48000} : undefined);
+    mediaRec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    mediaRec.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      clearInterval(recTimer); mediaRec = null;
+      const blob = new Blob(chunks, {type: (type || 'audio/mp4').split(';')[0]});
+      if (blob.size < 2000) { toast('Too short. Try again.'); return route(); }
+      await transcribeBlob(blob, c);
+    };
+    mediaRec.start(1000);
+    const t0 = Date.now();
+    $('#mic').classList.add('on'); $('#mic').setAttribute('aria-label', 'Stop recording');
+    recTimer = setInterval(() => {
+      const s = Math.floor((Date.now() - t0) / 1000), el = $('#micT');
+      if (el) el.textContent = `● ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} · tap to stop`;
+      if (s >= 300) stopMic();
+    }, 500);
+  }
+  function stopMic() { if (mediaRec && mediaRec.state !== 'inactive') mediaRec.stop(); }
+
+  const blobB64 = blob => new Promise((ok, bad) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.onerror = bad; r.readAsDataURL(blob); });
+  async function transcribeBlob(blob, c) {
+    if (!session() && !(await signIn())) { toast('Sign in to turn voice into text, or use "Type instead".'); return route(); }
+    sheet('<h3>Turning your voice into text…</h3><div class="spin"></div><p style="text-align:center">Usually 5–20 seconds.</p>');
+    $('#sheet').dataset.lock = '1';
+    try {
+      const name = c ? c.client.name + (c.client.nickname ? ' / ' + c.client.nickname : '') : '';
+      const r = await post({op: 'transcribe', audio: await blobB64(blob), mime: blob.type, hint: FU.hintFor(name)});
+      const text = String(r.text || '').trim();
+      closeSheet();
+      if (!text) { toast('Nothing was heard. Try again closer to the phone.'); return route(); }
+      rec.transcript = (rec.transcript ? rec.transcript + '\n' : '') + text; rec.step = 'transcript'; saveRec(); route();
+    } catch (e) {
+      closeSheet();
+      const msg = e.code === 'invalid_request' ? 'Voice needs the latest team server update. For now, use "Type instead" with your keyboard mic.' : AI_ERR[e.code] || 'Could not turn the voice into text (' + (e.code || 'error') + '). Try again, or use "Type instead".';
+      sheet(`<h3>Voice not converted</h3><p>${esc(msg)}</p><button class="btn block" data-close>OK</button>`);
+    }
+  }
+
+  /* ---------- AI draft ---------- */
+  async function draftWithAI(c) {
+    if (!rec.transcript.trim()) return toast('Record or type what happened first.');
+    if (!session() && !(await signIn())) return;
+    sheet('<h3>Writing the follow-up…</h3><div class="spin"></div><p style="text-align:center">About 20–40 seconds.</p>');
+    $('#sheet').dataset.lock = '1';
+    try {
+      const r = await post({op: 'ai', prompt: FU.buildPrompt({transcript: rec.transcript, lang: rec.lang, agentName: settings.name, client: c, concepts: KC.CONCEPTS, date: todayISO()})});
+      if (r.truncated) throw {code: 'invalid_json'};
+      rec.draft = FU.normalizeDraft(parseJSON(r.text), KC.CONCEPTS.map(k => k.id));
+      rec.pdfName = c ? (c.client.nickname && !rec.draft.client.name ? c.client.nickname : (rec.draft.client.name || c.client.name)) : rec.draft.client.name;
+      if (!c) { const m = FU.matchClient(cases, rec.draft.client.name); rec.matchId = m ? m.id : ''; }
+      rec.step = 'review'; saveRec(); closeSheet(); route();
+    } catch (e) {
+      closeSheet();
+      sheet(`<h3>Could not write the draft</h3><p>${esc(AI_ERR[e.code] || 'Something went wrong (' + (e.code || 'error') + '). Try again.')}</p><button class="btn block" data-close>OK</button>`);
+    }
+  }
+
+  /* ---------- review & send ---------- */
+  function reviewScreen(c, back, stepBar, discard) {
+    const d = rec.draft, L = d.letter;
+    const ta = (id, v, rows) => `<textarea id="${id}" rows="${rows || 3}">${esc(v)}</textarea>`;
+    const unchecked = d.numbers.filter(n => !n.ok).length;
+    app.innerHTML = bar('Review & send', back, discard) + `<div class="wrap">${stepBar}
+      <div class="card"><h2>Client</h2>
+        ${c ? `<p><b>${esc(c.client.name)}</b> · saved to this client</p>` : `
+          <div class="f"><label for="cWho">Save to</label><select id="cWho"><option value="">New client: ${esc(d.client.name || 'name below')}</option>${cases.filter(x => !x.sample).map(x => `<option value="${x.id}" ${rec.matchId === x.id ? 'selected' : ''}>${esc(x.client.name)}${x.client.nickname ? ' (' + esc(x.client.nickname) + ')' : ''}</option>`).join('')}</select></div>
+          ${rec.matchId ? '<p class="muted" style="color:var(--warn);margin:-4px 0 8px">Looks like a client you already have. Check before saving.</p>' : ''}`}
+        <div class="f"><label for="pdfN">Name on the PDF (how you address them)</label><input id="pdfN" value="${esc(rec.pdfName || '')}" placeholder="e.g. 陈先生 / Ah Seng / Puan Aminah"></div>
+        <p class="muted">No phone or IC numbers are saved. Use a nickname or tag (e.g. "陈先生 Bayan Lepas") to tell people apart.</p>
+      </div>
+      ${d.numbers.length ? `<div class="card numcheck"><h2>Numbers to check (${unchecked} left)</h2><p class="muted" style="margin-bottom:6px">The AI may mishear numbers. Tick each one after checking. Fix wrong ones in the letter below.</p>
+        ${d.numbers.map((n, i) => `<label class="chk"><input type="checkbox" data-n="${i}" ${n.ok ? 'checked' : ''}> <span><b>${esc(n.value)}</b> ${esc(n.what)}</span></label>`).join('')}</div>` : ''}
+      <div class="card"><h2>Letter to the client</h2>${langChips()}
+        <div class="f"><label>Title</label><input id="lTitle" value="${esc(L.title)}"></div>
+        <div class="f"><label>Greeting</label>${ta('lGreet', L.greeting, 2)}</div>
+        <div class="f"><label>What we talked about (blank line between paragraphs)</label>${ta('lDisc', L.discussed.join('\n\n'), 6)}</div>
+        <div class="f"><label>What matters to them (one per line)</label>${ta('lMat', L.matters.join('\n'), 4)}</div>
+        <div class="f"><label>My suggestion and why</label>${ta('lRec', L.recommendation, 4)}</div>
+        <div class="f"><label>Next step</label>${ta('lNext', L.nextStep, 2)}</div>
+        <div class="f"><label>Closing</label>${ta('lClose', L.closing, 2)}</div>
+        <button class="btn sm" id="redo">↻ Rewrite in the chosen language</button>
+      </div>
+      <div class="card"><h2>Concept pages (${d.concepts.length} chosen)</h2><p class="muted" style="margin-bottom:8px">Tap to add or remove. The AI picked the ones that match what you talked about.</p>
+        <div class="chips">${KC.CONCEPTS.map(k => `<button type="button" class="chip" data-k="${k.id}" aria-pressed="${d.concepts.includes(k.id)}">${esc(k.zh)}</button>`).join('')}</div></div>
+      ${photoStrip()}
+      <div class="card"><h2>WhatsApp message</h2>${ta('wa', d.whatsapp, 5)}</div>
+      <div class="card"><h2>For your farm record <span class="muted">(only you see this)</span></h2>
+        <div class="grid2"><div class="f"><label>Meeting type</label><select id="mType">${FU.MEETING_TYPES.map(t => `<option value="${t.id}" ${d.meeting.type === t.id ? 'selected' : ''}>${t.zh} · ${t.en}</option>`).join('')}</select></div>
+        <div class="f"><label>Follow up on</label><input id="mDate" type="date" value="${esc(d.meeting.followUpDate)}"></div></div>
+        <div class="f"><label>Summary</label>${ta('mSum', d.meeting.summary, 3)}</div>
+        <div class="f"><label>Next step</label><input id="mNext" value="${esc(d.meeting.nextStep)}"></div>
+        <div class="f"><label>Result</label><select id="mOut">${[['considering', 'Considering'], ['closed', 'Closed 🎉'], ['not_interested', 'Not interested'], ['none', 'No decision yet']].map(([v, l]) => `<option value="${v}" ${d.meeting.outcome === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      </div>
+    </div>
+    <div class="dock"><button class="btn" id="saveOnly">Save only</button><button class="btn primary" id="mkFU" ${unchecked ? 'disabled' : ''}>${unchecked ? `Check ${unchecked} number${unchecked > 1 ? 's' : ''}` : 'Create PDF & send'}</button></div>`;
+    wireCommon(c);
+    /* keep edits in the draft as the agent types */
+    const bind = (id, fn) => $('#' + id).addEventListener('input', () => { fn($('#' + id).value); saveRec(); });
+    bind('pdfN', v => rec.pdfName = v);
+    bind('lTitle', v => L.title = v); bind('lGreet', v => L.greeting = v);
+    bind('lDisc', v => L.discussed = v.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean));
+    bind('lMat', v => L.matters = v.split('\n').map(s => s.trim()).filter(Boolean));
+    bind('lRec', v => L.recommendation = v); bind('lNext', v => L.nextStep = v); bind('lClose', v => L.closing = v);
+    bind('wa', v => d.whatsapp = v); bind('mSum', v => d.meeting.summary = v); bind('mNext', v => d.meeting.nextStep = v);
+    $('#mType').onchange = e => { d.meeting.type = e.target.value; saveRec(); };
+    $('#mDate').onchange = e => { d.meeting.followUpDate = e.target.value; saveRec(); };
+    $('#mOut').onchange = e => { d.meeting.outcome = e.target.value; saveRec(); };
+    const who = $('#cWho'); if (who) who.onchange = () => { rec.matchId = who.value; saveRec(); };
+    $$('[data-n]').forEach(b => b.onchange = () => { d.numbers[+b.dataset.n].ok = b.checked; saveRec(); const left = d.numbers.filter(n => !n.ok).length;
+      const mk = $('#mkFU'); mk.disabled = !!left; mk.textContent = left ? `Check ${left} number${left > 1 ? 's' : ''}` : 'Create PDF & send'; $('.numcheck h2').textContent = `Numbers to check (${left} left)`; });
+    $$('.chip').forEach(b => b.onclick = () => { const k = b.dataset.k, i = d.concepts.indexOf(k); if (i >= 0) d.concepts.splice(i, 1); else d.concepts.push(k); b.setAttribute('aria-pressed', i < 0); saveRec();
+      $$('.card h2').forEach(h => { if (/^Concept pages/.test(h.textContent)) h.textContent = `Concept pages (${d.concepts.length} chosen)`; }); });
+    $('#redo').onclick = async () => { if (await confirmBox('Rewrite the letter?', 'The AI writes the letter again from your note, in the chosen language. Your edits to the letter will be replaced.', 'Rewrite')) draftWithAI(c); };
+    $('#saveOnly').onclick = () => finishMeeting(c, false);
+    $('#mkFU').onclick = () => finishMeeting(c, true);
+  }
+
+  async function finishMeeting(c, withPdf) {
+    const d = rec.draft, name = (rec.pdfName || '').trim();
+    if (!name) { toast('Add the name to show on the PDF.'); return $('#pdfN').focus(); }
+    /* the client this meeting belongs to */
+    let target = c || (rec.matchId ? getCase(rec.matchId) : null);
+    if (!target) {
+      const now = new Date().toISOString();
+      target = {id: PS.uid(), created: now, updated: now, client: {name: d.client.name || name, nickname: '', age: null, income: null}, guide: Object.assign({}, settings.guide), policies: [], meetings: []};
+      cases.push(target);
+    }
+    let blob = null, file = null;
+    if (withPdf) {
+      const pages = Report.buildFollowUp({clientName: name, draft: d, agent: profile(), lang: rec.lang, photos: recPhotos, concepts: d.concepts.map(KC.byId).filter(Boolean)});
+      const box = sheet('<h3>Creating PDF…</h3><div class="spin"></div><p id="pg" style="text-align:center"></p>');
+      $('#sheet').dataset.lock = '1';
+      const stage = document.createElement('div');
+      stage.style.cssText = 'position:fixed;left:-10000px;top:0;width:794px';
+      stage.innerHTML = pages.join(''); document.body.appendChild(stage);
+      try { blob = await Report.toPDF(stage, (i, n) => { const p = $('#pg', box); if (p) p.textContent = `Page ${i} of ${n}`; }); }
+      catch (e) { stage.remove(); closeSheet(); return toast('Could not create the PDF. Try again.'); }
+      stage.remove();
+      file = new File([blob], `${(d.letter.title || 'Follow-up').replace(/[^\w一-鿿 .-]+/g, '')} - ${name.replace(/[^\w一-鿿 .-]+/g, '')}.pdf`, {type: 'application/pdf'});
+      window.__lastPdf = blob;
+    }
+    FU.applyToFarm(target, d, {date: todayISO(), sentPdf: withPdf});
+    saveCases();
+    const wa = d.whatsapp, caseId = target.id;
+    rec = null; recPhotos = []; saveRec();
+    if (!withPdf) { toast('Saved to ' + target.client.name + "'s farm record"); location.hash = '#/case/' + caseId; return; }
+    const url = URL.createObjectURL(blob);
+    const canShare = navigator.canShare && navigator.canShare({files: [file]});
+    const el = sheet(`<h3>Ready to send</h3><p><b>${esc(file.name)}</b> · ${(blob.size / 1024).toFixed(0)} KB<br>Saved to ${esc(target.client.name)}'s farm record.</p>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${canShare ? '<button class="btn primary block" id="shr">Send PDF to client…</button>' : ''}
+        <button class="btn block" id="cpy">Copy WhatsApp message</button>
+        <a class="btn ${canShare ? '' : 'primary'} block" href="${url}" download="${esc(file.name)}">Save / open PDF</a>
+        <button class="btn ghost block" id="done">Done</button></div>
+      <p class="muted" style="margin-top:8px">Tip: copy the message first, then send the PDF in WhatsApp and paste the message with it.</p>`);
+    $('#sheet').dataset.lock = '1';
+    $('#cpy', el).onclick = async () => { try { await navigator.clipboard.writeText(wa); toast('Message copied'); } catch (e) { toast('Copy did not work; select the text in the review screen next time.'); } };
+    const s = $('#shr', el); if (s) s.onclick = async () => {
+      if (!(await confirmBox('Send to ' + name + '?', 'Check you pick the right chat in WhatsApp. The message is copied too, so you can paste it with the PDF.', 'Choose app'))) return;
+      try { await navigator.clipboard.writeText(wa); } catch (e) {}
+      try { await navigator.share({files: [file], text: wa}); } catch (e) { if (e.name !== 'AbortError') toast('Sharing failed. Use Save / open PDF.'); }
+    };
+    $('#done', el).onclick = () => { URL.revokeObjectURL(url); closeSheet(); location.hash = '#/case/' + caseId; route(); };
+  }
+
+  /* ---------- the agent's own profile (on every follow-up PDF) ---------- */
+  const profile = () => ({name: settings.name, title: settings.title, phone: settings.phone, email: settings.email || '', photo: settings.photo || '', intro: settings.intro || '', why: settings.why || '', background: settings.background || ''});
+  function openProfile() {
+    const el = sheet(`<div class="sheet-top"><h3>My profile</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div>
+      <p>Goes on the "About me" page of every follow-up PDF. Set it once.</p>
+      <div class="prof-photo"><img id="pPhoto" src="${settings.photo || 'icons/icon-192.png'}" alt=""><button class="btn sm" id="pPick">${settings.photo ? 'Change photo' : 'Add photo'}</button><input type="file" id="pIn" accept="image/*" hidden></div>
+      <div class="f"><label for="pN">Name</label><input id="pN" value="${esc(settings.name)}"></div>
+      <div class="f"><label for="pT">Title</label><input id="pT" value="${esc(settings.title)}" placeholder="e.g. Financial Planner, REDEFINE · Great Eastern Life"></div>
+      <div class="grid2"><div class="f"><label for="pP">Phone</label><input id="pP" value="${esc(settings.phone)}" inputmode="tel"></div><div class="f"><label for="pE">Email</label><input id="pE" value="${esc(settings.email || '')}" inputmode="email"></div></div>
+      <div class="f"><label for="pI">About me (2–4 sentences)</label><textarea id="pI" rows="3">${esc(settings.intro || '')}</textarea></div>
+      <div class="f"><label for="pW">Why I do insurance</label><textarea id="pW" rows="3">${esc(settings.why || '')}</textarea></div>
+      <div class="f"><label for="pB">Background / achievements (optional)</label><textarea id="pB" rows="2">${esc(settings.background || '')}</textarea></div>
+      <div class="f"><label>Usual letter language</label><select id="pL">${[['zh', '中文'], ['en', 'English'], ['ms', 'Bahasa Melayu']].map(([k, l]) => `<option value="${k}" ${(settings.fuLang || 'zh') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="row"><button class="btn" data-close>Cancel</button><button class="btn primary" id="pSave">Save</button></div>`);
+    let photo = settings.photo || '';
+    $('#pPick', el).onclick = () => $('#pIn', el).click();
+    $('#pIn', el).onchange = async e => { const f = e.target.files[0]; if (!f) return; try { photo = 'data:image/jpeg;base64,' + await toJpegB64(f, 420); $('#pPhoto', el).src = photo; } catch (er) { toast('Could not open that photo.'); } };
+    $('#pSave', el).onclick = () => {
+      Object.assign(settings, {name: $('#pN', el).value.trim(), title: $('#pT', el).value.trim(), phone: $('#pP', el).value.trim(), email: $('#pE', el).value.trim(),
+        intro: $('#pI', el).value.trim(), why: $('#pW', el).value.trim(), background: $('#pB', el).value.trim(), fuLang: $('#pL', el).value, photo});
+      save('pspt.settings', settings); closeSheet(); toast('Profile saved'); route();
+    };
+  }
+
+  /* ---------- farm on the client screen ---------- */
+  function farmCard(c) {
+    const ms = (c.meetings || []).slice().reverse(), t = c.client.traits || {};
+    const b = FU.brief(c, todayISO());
+    return `<div class="card farm"><div class="farm-h"><h2>Client farm</h2><button class="btn sm" id="editT">Edit details</button></div>
+      ${ms.length ? `<div class="brief"><b>Before you meet</b>${b.map(x => `<p>${esc(x)}</p>`).join('')}</div>` : '<p class="muted">No meetings yet. After you meet, tap <b>Record a meeting</b>; it is saved here.</p>'}
+      <button class="btn primary block" id="recC" style="margin:10px 0">🎙 Record a meeting</button>
+      ${ms.length ? `<ol class="timeline">${ms.map(m => `<li><span class="tl-d">${esc(m.date)}</span><b>${esc(FU.typeLabel(m.type))}${m.outcome === 'closed' ? ' 🎉' : ''}${m.sentPdf ? ' · PDF sent' : ''}</b><p>${esc(m.summary)}</p>${m.nextStep ? `<p class="tl-n">Next: ${esc(m.nextStep)}${m.followUpDate ? ' · ' + esc(m.followUpDate) : ''}</p>` : ''}<button class="tinylink tl-del" data-m="${m.id}">delete</button></li>`).join('')}</ol>` : ''}
+      ${(t.family || t.work || (t.cares || []).length || (t.objections || []).length) ? `<div class="traits">${t.family ? `<p><b>Family</b> ${esc(t.family)}</p>` : ''}${t.work ? `<p><b>Work</b> ${esc(t.work)}</p>` : ''}${t.personality ? `<p><b>Personality</b> ${esc(t.personality)}</p>` : ''}${(t.cares || []).length ? `<p><b>Cares about</b> ${esc(t.cares.join(', '))}</p>` : ''}${(t.objections || []).length ? `<p><b>Concerns</b> ${esc(t.objections.join(', '))}</p>` : ''}</div>` : ''}
+    </div>`;
+  }
+  function wireFarm(c) {
+    $('#recC').onclick = () => startRecord(c.id);
+    $('#editT').onclick = () => editTraits(c);
+    $$('.tl-del').forEach(b => b.onclick = async () => {
+      if (!(await confirmBox('Delete this meeting record?', 'It is removed from this client\'s farm on all your synced devices. A PDF already sent is not affected.', 'Delete', true))) return;
+      c.meetings = c.meetings.filter(m => m.id !== b.dataset.m); c.updated = new Date().toISOString(); saveCases(); route();
+    });
+  }
+  function editTraits(c) {
+    const t = c.client.traits = c.client.traits || {family: '', work: '', personality: '', cares: [], objections: []};
+    const el = sheet(`<div class="sheet-top"><h3>${esc(c.client.name)}</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div>
+      <p class="muted">No IC, phone or medical details here.</p>
+      <div class="f"><label>Nickname / tag (to tell same names apart)</label><input id="tNick" value="${esc(c.client.nickname || '')}" placeholder="e.g. Bayan Lepas, engineer"></div>
+      <div class="f"><label>Family</label><input id="tFam" value="${esc(t.family)}"></div>
+      <div class="f"><label>Work</label><input id="tWork" value="${esc(t.work)}"></div>
+      <div class="f"><label>Personality</label><input id="tPers" value="${esc(t.personality || '')}"></div>
+      <div class="f"><label>Cares about (one per line)</label><textarea id="tCare" rows="3">${esc((t.cares || []).join('\n'))}</textarea></div>
+      <div class="f"><label>Concerns / objections (one per line)</label><textarea id="tObj" rows="3">${esc((t.objections || []).join('\n'))}</textarea></div>
+      <div class="row"><button class="btn" data-close>Cancel</button><button class="btn primary" id="tSave">Save</button></div>`);
+    $('#tSave', el).onclick = () => {
+      const lines = id => $(id, el).value.split('\n').map(s => s.trim()).filter(Boolean);
+      c.client.nickname = $('#tNick', el).value.trim();
+      Object.assign(t, {family: $('#tFam', el).value.trim(), work: $('#tWork', el).value.trim(), personality: $('#tPers', el).value.trim(), cares: lines('#tCare'), objections: lines('#tObj')});
+      c.updated = new Date().toISOString(); saveCases(); closeSheet(); route();
+    };
+  }
+  /* clients to follow up soon: next step date within 3 days or overdue */
+  function dueList() {
+    const soon = new Date(); soon.setDate(soon.getDate() + 3); const lim = soon.toISOString().slice(0, 10);
+    return cases.filter(c => !c.sample).map(c => ({c, m: (c.meetings || [])[(c.meetings || []).length - 1]}))
+      .filter(x => x.m && x.m.followUpDate && x.m.followUpDate <= lim && x.m.outcome !== 'closed' && x.m.outcome !== 'not_interested')
+      .sort((a, b) => a.m.followUpDate.localeCompare(b.m.followUpDate));
+  }
+
   /* ---------- staying signed in ----------
      On iPhone/iPad, Safari and the home-screen app keep separate storage, and Safari clears a website's
      storage after about 7 days without use. The home-screen app keeps it, so we nudge agents to install. */
@@ -684,7 +1037,9 @@
 
   function openSettings() {
     const s = session();
-    const el = sheet(`<div class="sheet-top"><h3>Settings</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div><p>Shown at the bottom of every PDF.</p>
+    const el = sheet(`<div class="sheet-top"><h3>Settings</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div>
+      <button class="btn block" id="openProf" style="margin-bottom:12px">👤 My profile (photo, intro, why insurance)</button>
+      <p>Shown at the bottom of every PDF.</p>
       <div class="f"><label for="sN">Your name</label><input id="sN" value="${esc(settings.name)}" autocomplete="name"></div>
       <div class="f"><label for="sT">Title (optional)</label><input id="sT" value="${esc(settings.title)}" placeholder="e.g. Financial Planner, REDEFINE"></div>
       <div class="f"><label for="sP">Phone (optional)</label><input id="sP" value="${esc(settings.phone)}" inputmode="tel"></div>
@@ -695,10 +1050,11 @@
       ${Object.keys(learned).length ? '<button class="btn ghost block" id="forget">Forget remembered benefit names</button>' : ''}</div>
       ${s ? '<button class="tinylink" id="out">Sign out of this device…</button>' : ''}`);
     $('[data-ok]', el).onclick = () => {
-      settings = {name: $('#sN', el).value.trim(), title: $('#sT', el).value.trim(), phone: $('#sP', el).value.trim(),
-        guide: {death: PS.parseAmount($('#sD', el).value).value || 10, ci: PS.parseAmount($('#sC', el).value).value || 5}};
+      Object.assign(settings, {name: $('#sN', el).value.trim(), title: $('#sT', el).value.trim(), phone: $('#sP', el).value.trim(),
+        guide: {death: PS.parseAmount($('#sD', el).value).value || 10, ci: PS.parseAmount($('#sC', el).value).value || 5}});   // keeps the profile fields
       save('pspt.settings', settings); closeSheet(); toast('Saved'); route();
     };
+    $('#openProf', el).onclick = openProfile;
     const o = $('#out', el); if (o) o.onclick = async () => {
       if (!(await confirmBox('Sign out of this device?', 'You will need the team code again to read photos and PDFs' + (syncCfg ? ', and sync will pause until you sign back in' : '') + '. Clients on this device stay. You normally never need to sign out.', 'Sign out', true))) return;
       localStorage.setItem('pspt.session', 'null'); toast('Signed out'); route();

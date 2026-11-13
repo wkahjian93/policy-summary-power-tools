@@ -101,6 +101,33 @@ console.log('Joining parts of a policy read in different batches');
   eq('different insurer, same number: not joined', m.some(p => p.insurer === 'AIA'), true);
 }
 
+console.log('On Field: voice note -> draft -> farm');
+{
+  const FU = require('./docs/followup.js'), K = require('./docs/concepts.js');
+  const ids = K.CONCEPTS.map(k => k.id);
+  eq('13 concepts, unique ids', [ids.length, new Set(ids).size], [13, 13]);
+  const p = FU.buildPrompt({transcript: '今天见陈先生 lah, 他担心 medical card 不够', lang: 'zh', agentName: 'Ali', client: null, concepts: K.CONCEPTS, date: '2026-11-13'});
+  eq('prompt names all 5 languages', ['Mandarin', 'Hokkien', 'Cantonese', 'English', 'Malay'].every(w => p.includes(w)), true);
+  eq('speech hint covers dialect particles', ['lah', '咯', 'medical card', 'TPD'].every(w => FU.HINT.includes(w)), true);
+  const d = FU.normalizeDraft({client: {name: '陈先生', family: '太太和两个孩子', cares: ['medical cost', 'Medical cost'], objections: ['premium high']},
+    meeting: {type: 'presentation', summary: 'Showed plan. His IC 900101-07-1234, phone 012-345 6789.', nextStep: 'Call Friday', followUpDate: '2026-11-20', outcome: 'considering'},
+    letter: {title: '今天谈的事', discussed: ['A', 'B']}, concepts: ['tree', 'made-up', 'umbrella'], whatsapp: 'Hi', numbers: [{what: 'premium', value: 'RM250/month'}]}, ids);
+  eq('IC and phone scrubbed from farm summary', /900101|345 6789/.test(d.meeting.summary), false);
+  eq('unknown concept ids dropped', d.concepts, ['tree', 'umbrella']);
+  eq('numbers listed for checking, unchecked', d.numbers, [{what: 'premium', value: 'RM250/month', ok: false}]);
+  eq('bad meeting type -> other', FU.normalizeDraft({meeting: {type: 'party'}}, ids).meeting.type, 'other');
+  const c = {id: 'c1', client: {name: '陈先生'}, policies: []};
+  FU.applyToFarm(c, d, {date: '2026-11-13'});
+  FU.applyToFarm(c, FU.normalizeDraft({client: {cares: ['MEDICAL COST', 'kids education']}, meeting: {type: 'follow_up', summary: 'Second chat'}}, ids), {date: '2026-11-20'});
+  eq('2 meetings in date order', c.meetings.map(m => m.date), ['2026-11-13', '2026-11-20']);
+  eq('cares merged without duplicates', c.client.traits.cares, ['medical cost', 'kids education']);
+  eq('family kept when later note is blank', c.client.traits.family, '太太和两个孩子');
+  eq('match by name ignoring 先生/spaces', FU.matchClient([c], '陈 先生') === c, true);
+  eq('no match for a different client', FU.matchClient([c], 'Ah Seng'), null);
+  const b = FU.brief(c, '2026-11-27');
+  eq('brief starts with last meeting and days ago', /^Last met 2026-11-20 \(7 days ago\)/.test(b[0]), true);
+}
+
 console.log('Summary maths (sample client)');
 const c = sampleCase(PS), s = PS.summarise(c);
 eq('death = 300k + 100k + 200k (lapsed 50k not counted)', s.cats.death.total, 600000);
