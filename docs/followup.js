@@ -109,6 +109,67 @@
   }
   const typeLabel = id => { const t = MEETING_TYPES.find(x => x.id === id); return t ? t.en : 'Meeting'; };
 
-  const api = {MEETING_TYPES, LANGS, HINT, hintFor, buildPrompt, normalizeDraft, scrub, matchClient, applyToFarm, brief, typeLabel};
+  /* ---------- 三访 daily report ---------- */
+  const TARGET = 3;
+  function meetingsOn(cases, date) {
+    const out = [];
+    (cases || []).forEach(c => { if (!c.sample) (c.meetings || []).forEach(m => { if (m.date === date) out.push({c, m}); }); });
+    return out;
+  }
+  /* per day: distinct clients met, presentations, closed */
+  function dayStats(cases) {
+    const days = {};
+    (cases || []).forEach(c => { if (c.sample) return; (c.meetings || []).forEach(m => {
+      const d = days[m.date] = days[m.date] || {met: 0, pres: 0, closed: 0, ids: {}};
+      if (!d.ids[c.id]) { d.ids[c.id] = 1; d.met++; }
+      if (m.type === 'presentation') d.pres++;
+      if (m.outcome === 'closed' || m.type === 'closing') d.closed++;
+    }); });
+    return days;
+  }
+  const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  /* days in a row with 3+ people met; today still counts as "in progress" so it doesn't break the streak */
+  function streak(days, today) {
+    let d = (days[today] && days[today].met >= TARGET) ? today : addDays(today, -1), n = 0;
+    while (days[d] && days[d].met >= TARGET) { n++; d = addDays(d, -1); }
+    return n;
+  }
+  function weekStats(days, today) {
+    const dow = (new Date(today + 'T00:00:00Z').getUTCDay() + 6) % 7;   // Monday = 0
+    const start = addDays(today, -dow);
+    let met = 0, hit = 0, pres = 0, closed = 0;
+    for (let i = 0; i <= dow; i++) { const s = days[addDays(start, i)]; if (s) { met += s.met; pres += s.pres; closed += s.closed; if (s.met >= TARGET) hit++; } }
+    return {start, met, hit, pres, closed, daysSoFar: dow + 1};
+  }
+  const TYPE_ZH = {fact_find: '了解需求', presentation: 'Proposal 讲解', follow_up: 'Follow up', closing: '成交', service: '服务', other: '见面'};
+  const short = (s, n) => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
+  function reportText(o) {
+    // o: {date, agentName, items: [{name, type, nextStep, outcome, sentPdf}], reflection, tomorrow, streak, week, hideNames, lang}
+    const en = o.lang === 'en', dd = o.date.slice(8, 10) + '/' + o.date.slice(5, 7);
+    const met = new Set(o.items.map(i => i.key || i.name)).size;
+    const lines = [(en ? '📋 3-Visit Report ' : '📋 三访报告 ') + dd + (o.agentName ? ' · ' + o.agentName : ''),
+      (met >= TARGET ? '✅ ' : '⏳ ') + (en ? 'Met today: ' : '今日见面：') + met + '/' + TARGET, ''];
+    o.items.forEach((it, i) => {
+      const who = o.hideNames ? (en ? 'Client ' : '客户 ') + String.fromCharCode(65 + i) : it.name;
+      const closed = it.outcome === 'closed' || it.type === 'closing';
+      const bits = closed && it.type === 'closing' ? [] : [en ? typeLabel(it.type) : TYPE_ZH[it.type] || '见面'];
+      if (closed) bits.push(en ? 'closed 🎉' : '成交 🎉');
+      else {
+        if (it.sentPdf) bits.push(en ? 'follow-up PDF sent' : '已 send PDF');
+        if (it.nextStep) bits.push(short(it.nextStep, 32));
+      }
+      lines.push(`${i + 1}. ${who} — ${bits.join(en ? ', ' : '，')}`);
+    });
+    if (!o.items.length) lines.push(en ? '(no meetings recorded)' : '（今天没有记录见面）');
+    lines.push('');
+    if (o.reflection) lines.push((en ? '💡 Reflection: ' : '💡 今日反思：') + o.reflection.trim());
+    if (o.tomorrow) lines.push((en ? '🎯 Tomorrow: ' : '🎯 明天目标：') + o.tomorrow.trim());
+    const w = o.week;
+    if (o.streak || (w && w.met)) lines.push((o.streak ? (en ? `🔥 ${o.streak} day${o.streak > 1 ? 's' : ''} in a row at 3+` : `🔥 连续 ${o.streak} 天达标`) : '') + (o.streak && w ? ' · ' : '') + (w ? (en ? `This week: ${w.met} visits` : `本周 ${w.met} 访`) : ''));
+    return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  const api = {TARGET, meetingsOn, dayStats, streak, weekStats, reportText, addDays,
+    MEETING_TYPES, LANGS, HINT, hintFor, buildPrompt, normalizeDraft, scrub, matchClient, applyToFarm, brief, typeLabel};
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FU = api;
 })(this);

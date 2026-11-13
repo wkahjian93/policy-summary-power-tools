@@ -128,6 +128,32 @@ console.log('On Field: voice note -> draft -> farm');
   eq('brief starts with last meeting and days ago', /^Last met 2026-11-20 \(7 days ago\)/.test(b[0]), true);
 }
 
+console.log('三访 report');
+{
+  const FU = require('./docs/followup.js');
+  const mk = (id, name, ms) => ({id, client: {name}, policies: [], meetings: ms.map(([date, type, outcome, nextStep, sentPdf]) => ({date, type, outcome: outcome || 'none', nextStep: nextStep || '', sentPdf: !!sentPdf}))});
+  const cases = [
+    mk('a', '陈先生', [['2026-11-12', 'fact_find'], ['2026-11-13', 'presentation', 'considering', '下星期五 call', true]]),
+    mk('b', 'Ah Seng', [['2026-11-12', 'fact_find'], ['2026-11-13', 'fact_find', 'none', '下次谈 medical']]),
+    mk('c', '李太太', [['2026-11-12', 'follow_up'], ['2026-11-13', 'closing', 'closed']]),
+    mk('d', 'Kumar', [['2026-11-11', 'fact_find'], ['2026-11-11', 'follow_up']]),
+    Object.assign(mk('s', 'Sample', [['2026-11-13', 'fact_find']]), {sample: true})
+  ];
+  const days = FU.dayStats(cases);
+  eq('13 Nov: 3 people, 1 presentation, 1 closed (sample ignored)', [days['2026-11-13'].met, days['2026-11-13'].pres, days['2026-11-13'].closed], [3, 1, 1]);
+  eq('same client twice in a day counts once', days['2026-11-11'].met, 1);
+  eq('streak: 12 and 13 Nov at 3+ = 2 days', FU.streak(days, '2026-11-13'), 2);
+  eq('streak not broken while today is still in progress', FU.streak(days, '2026-11-14'), 2);
+  const w = FU.weekStats(days, '2026-11-13');   // Fri; week starts Mon 9 Nov
+  eq('week from Monday: 7 visits, 2 days at 3+', [w.start, w.met, w.hit], ['2026-11-09', 7, 2]);
+  const items = FU.meetingsOn(cases, '2026-11-13').map(({c, m}) => ({key: c.id, name: c.client.name, type: m.type, nextStep: m.nextStep, outcome: m.outcome, sentPdf: m.sentPdf}));
+  const txt = FU.reportText({date: '2026-11-13', agentName: 'Ali', items, reflection: '今天讲 concept 比较顺', tomorrow: '见 3 个新朋友', streak: 2, week: w});
+  eq('report header and count', txt.split('\n').slice(0, 2), ['📋 三访报告 13/11 · Ali', '✅ 今日见面：3/3']);
+  eq('report lines', txt.split('\n').slice(3, 6), ['1. 陈先生 — Proposal 讲解，已 send PDF，下星期五 call', '2. Ah Seng — 了解需求，下次谈 medical', '3. 李太太 — 成交 🎉']);
+  eq('report footer', txt.split('\n').slice(-3), ['💡 今日反思：今天讲 concept 比较顺', '🎯 明天目标：见 3 个新朋友', '🔥 连续 2 天达标 · 本周 7 访']);
+  eq('hide names uses Client A/B/C', /客户 A/.test(FU.reportText({date: '2026-11-13', items, hideNames: true})) && !/陈先生/.test(FU.reportText({date: '2026-11-13', items, hideNames: true})), true);
+}
+
 console.log('Summary maths (sample client)');
 const c = sampleCase(PS), s = PS.summarise(c);
 eq('death = 300k + 100k + 200k (lapsed 50k not counted)', s.cats.death.total, 600000);

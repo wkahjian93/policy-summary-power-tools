@@ -17,6 +17,20 @@ The follow-up PDF: a personal letter (what we talked about, what matters to you,
 
 Every client has a farm card: a **Before you meet** brief (last meeting, family and work, what they care about, concerns, agreed next step), a timeline of every meeting, and their details. Only names or nicknames are kept: no phone, IC or medical details. The AI is told to leave those out and the app also strips IC and phone numbers. Clients with a follow-up date in the next 3 days or overdue appear under **Follow up soon** on the home screen. With sync on, the farm syncs between your iPad and phone, locked with your passphrase.
 
+## Daily 三访 report
+
+The home screen shows **三访 today** (people met out of 3), your run of days at 3+, and this week's visits (week starts Monday). Every recorded meeting counts automatically; the same client twice in one day counts once.
+
+1. In the evening tap **📋 Daily review & report**. Today's meetings are already listed.
+2. Met someone you didn't record? Tap **+ Add someone I met (quick log)**; it goes into their farm.
+3. Type or speak your **💡 Reflection** and **🎯 Tomorrow** (tap a box, then **🎙 Speak into the box**).
+4. Tap **Copy report for WhatsApp** and paste it in the group. Tick **Hide client names** to show Client A, B, C instead.
+5. If **Share my numbers with my leader** is on (default), only the counts (met, presentations, closed) go to the team server. No client names.
+
+Pick any past day with the date at the top. Reflections sync between your devices with your passphrase.
+
+**Leader view:** signed in with the owner code, the home card shows **👥 Team 三访**: each agent's today, this week, days at 3+, streak and closes.
+
 ## Policy summary
 
 **The pain:** a policy summary means gathering every policy from every insurer, working out what each one covers and adding it all up by hand. That takes hours.
@@ -71,7 +85,7 @@ Clients are locked with your passphrase before they leave the device. The server
 ## For maintenance
 
 - `docs/` is the app. `logic.js` handles recognition and calculations, `report.js` builds the PDF pages, `app.js` runs the screens, and `config.js` holds the server address.
-- `node test.js` runs 84 checks covering recognition, messy numbers, the never-guess rules and the summary maths.
+- `node test.js` runs 93 checks covering recognition, messy numbers, the never-guess rules and the summary maths.
 - `node serve.js` previews the app at http://localhost:5193.
 - `samples/` holds the sample PDF made by the app.
 - `node test-sync-server.js` runs the real team server code in memory on port 5194 to test sync (open localhost:5194 and 127.0.0.1:5194 as two devices; team code `test-team-code`).

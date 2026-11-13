@@ -183,3 +183,20 @@ details.card summary::-webkit-details-marker{display:none}
 .traits b{color:var(--muted);font-weight:600;margin-right:4px}
 .prof-photo{display:flex;align-items:center;gap:12px;margin-bottom:12px}
 .prof-photo img{width:72px;height:72px;border-radius:50%;object-fit:cover;border:2px solid var(--line)}
+
+/* ---------- 三访 ---------- */
+.sanfang .sf-top{display:flex;justify-content:space-between;align-items:center}
+.sf-n{font:600 38px/1 Fraunces,Georgia,serif;color:var(--ink)}
+.sf-n small{font-size:18px;color:var(--muted);margin-left:2px}
+.sf-dots{display:flex;gap:8px}
+.sf-dots i{width:22px;height:22px;border-radius:50%;background:#ECE9E1;border:2px solid var(--line)}
+.sf-dots i.on{background:var(--gold);border-color:var(--gold)}
+.sanfang .muted{margin:6px 0 10px}
+.datepick{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:8px;padding:6px;font-size:13px;color-scheme:dark;max-width:150px}
+.rpt{white-space:pre-wrap;font:14px/1.55 Inter,system-ui,sans-serif;background:#F4F1E8;border-radius:12px;padding:12px;margin:10px 0}
+table.team{width:100%;border-collapse:collapse;font-size:13.5px}
+table.team th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:right;padding:6px 4px;border-bottom:2px solid var(--ink)}
+table.team th:first-child,table.team td:first-child{text-align:left}
+table.team td{text-align:right;padding:8px 4px;border-bottom:1px solid var(--line)}
+table.team td span{display:block;font-size:11px;color:var(--muted)}
+table.team td.ok{color:var(--ok);font-weight:700}

@@ -14,6 +14,7 @@
   let settings = load('pspt.settings', {name: '', title: '', phone: '', guide: {death: 10, ci: 5}});
   let learned = load('pspt.learned', {});
   let tombs = load('pspt.tombs', {});   // deleted client ids -> when, so a delete reaches the other devices
+  let reports = load('pspt.reports', {});   // 三访: date -> {reflection, tomorrow, hideNames, done, updated}
   const saveCases = () => { save('pspt.cases', cases); scheduleSync(); };
   const getCase = id => cases.find(c => c.id === id);
   const agent = () => ({name: settings.name, title: settings.title, phone: settings.phone});
@@ -53,6 +54,8 @@
     const h = location.hash.replace(/^#\/?/, '').split('/');
     window.scrollTo(0, 0);
     if (h[0] === 'record') return recordScreen(h[1] && getCase(h[1]) ? h[1] : null);
+    if (h[0] === 'day') return dayScreen(h[1]);
+    if (h[0] === 'team') return teamScreen();
     if (h[0] === 'case' && getCase(h[1])) {
       if (h[2] === 'policy') return editPolicy(getCase(h[1]), h[3]);
       if (h[2] === 'summary') return summary(getCase(h[1]));
@@ -73,6 +76,7 @@
           <button class="btn primary block rec-big" id="recNew">🎙 Record a meeting</button>
           ${rec && (rec.transcript || rec.draft) ? '<button class="btn block" id="recResume" style="margin-top:8px">Continue unfinished note</button>' : ''}
           <button class="btn block ghost-l" id="new">+ New client · policy summary</button></div>
+        ${todayCard()}
         ${settings.name ? '' : '<div class="checks"><b>Add your name first.</b> It goes at the bottom of every PDF. <a href="#" id="set2">Open settings</a></div>'}
         ${settings.name && !settings.intro ? '<div class="checks"><b>Set up "My profile" once.</b> Your photo, intro and why you do insurance go on every follow-up PDF. <a href="#" id="prof2">Open My profile</a></div>' : ''}
         ${due.length ? `<h2 class="muted" style="margin:6px 2px 8px;font-weight:600">FOLLOW UP SOON</h2>${due.map(({c, m}) => `<a class="item" href="#/case/${c.id}"><span class="stripe" style="background:${m.followUpDate < todayISO() ? 'var(--err)' : 'var(--gold)'}"></span><div class="t"><b>${esc(c.client.name)}</b><span>${esc(m.nextStep || FU.typeLabel(m.type))}</span></div><div class="amt">${esc(m.followUpDate)}<small>${m.followUpDate < todayISO() ? 'overdue' : m.followUpDate === todayISO() ? 'today' : 'soon'}</small></div></a>`).join('')}` : ''}
@@ -91,6 +95,7 @@
       </div>`;
     $('#new').onclick = newCase;
     $('#recNew').onclick = () => startRecord(null);
+    wireTodayCard();
     const rr = $('#recResume'); if (rr) rr.onclick = () => { location.hash = '#/record' + (rec.caseId ? '/' + rec.caseId : ''); };
     const p2 = $('#prof2'); if (p2) p2.onclick = e => { e.preventDefault(); openProfile(); };
     const qc = $('#qC'); if (qc) qc.oninput = () => { home.q = qc.value; const pos = qc.selectionStart; home(); const n = $('#qC'); n.focus(); n.setSelectionRange(pos, pos); };
@@ -197,7 +202,7 @@
         const who = {name: $('#gName', el).value.trim(), code: $('#gCode', el).value.trim()};
         if (!who.name || !who.code) { $('#gMsg', el).textContent = 'Enter both.'; return; }
         $('[data-ok]', el).disabled = true; $('[data-ok]', el).textContent = 'Checking…';
-        try { await post({op: 'login'}, who); save('pspt.session', who); if (!settings.name) { settings.name = who.name; save('pspt.settings', settings); } closeSheet(); done(true); }
+        try { const lr = await post({op: 'login'}, who); save('pspt.session', Object.assign(who, {owner: !!lr.owner})); if (!settings.name) { settings.name = who.name; save('pspt.settings', settings); } closeSheet(); done(true); }
         catch (e) {
           $('#gMsg', el).textContent = e.code === 'unauthorized' ? 'That team code is not right.' : e.code === 'locked' ? 'Too many wrong tries. Wait 15 minutes.' : 'Could not reach the team server. Check your connection.';
           $('[data-ok]', el).disabled = false; $('[data-ok]', el).textContent = 'Sign in';
@@ -604,7 +609,13 @@
         const key = await aesKey(), vault = syncCfg.vault;
         const server = (await post({op: 'psget', vault})).items || {};
         let pulled = 0; lastPulled = 0;
+        let pulledR = 0;
         for (const id of Object.keys(server)) {
+          if (id.startsWith('r_')) {   // a day's 三访 reflection, not a client
+            const s = server[id], date = id.slice(2), loc = reports[date];
+            if (!s.d && (!loc || !loc.updated || s.u > loc.updated)) { try { reports[date] = await open(key, s); pulledR++; } catch (e) {} }
+            continue;
+          }
           const s = server[id], local = getCase(id), mine = [local && local.updated, tombs[id]].filter(Boolean).sort().pop();
           if (mine && s.u <= mine) continue;
           if (s.d) { if (local) { cases = cases.filter(x => x.id !== id); pulled++; } tombs[id] = s.u; continue; }
@@ -615,6 +626,8 @@
         const push = {};
         for (const c of cases) if (!c.sample && (!server[c.id] || server[c.id].u < c.updated)) push[c.id] = Object.assign({u: c.updated}, await seal(key, c));
         for (const id of Object.keys(tombs)) if (server[id] && !server[id].d && server[id].u < tombs[id]) push[id] = {u: tombs[id], d: true};
+        for (const date of Object.keys(reports)) { const r = reports[date], sid = 'r_' + date; if (r.updated && (!server[sid] || server[sid].u < r.updated)) push[sid] = Object.assign({u: r.updated}, await seal(key, r)); }
+        if (pulledR) save('pspt.reports', reports);
         if (Object.keys(push).length) await post({op: 'psput', vault, items: push});
         save('pspt.tombs', tombs);
         lastPulled = pulled;
@@ -1019,6 +1032,137 @@
     return cases.filter(c => !c.sample).map(c => ({c, m: (c.meetings || [])[(c.meetings || []).length - 1]}))
       .filter(x => x.m && x.m.followUpDate && x.m.followUpDate <= lim && x.m.outcome !== 'closed' && x.m.outcome !== 'not_interested')
       .sort((a, b) => a.m.followUpDate.localeCompare(b.m.followUpDate));
+  }
+
+  /* ======================= 三访 daily review + GM team view ======================= */
+  const saveReports = () => { save('pspt.reports', reports); scheduleSync(); };
+  function todayCard() {
+    const days = FU.dayStats(cases), t = todayISO(), d = days[t] || {met: 0}, st = FU.streak(days, t), w = FU.weekStats(days, t);
+    return `<div class="card sanfang"><div class="sf-top"><div><h2>三访 today</h2><b class="sf-n">${d.met}<small>/3</small></b></div>
+      <div class="sf-dots">${[0, 1, 2].map(i => `<i class="${d.met > i ? 'on' : ''}"></i>`).join('')}</div></div>
+      <p class="muted">${st ? `🔥 ${st} day${st > 1 ? 's' : ''} in a row · ` : ''}This week ${w.met} visit${w.met === 1 ? '' : 's'} · ${w.hit} day${w.hit === 1 ? '' : 's'} at 3+</p>
+      <button class="btn block" id="dayRev">📋 ${reports[t] && reports[t].done ? 'Edit today\'s report' : 'Daily review & report'}</button>
+      ${(session() || {}).owner ? '<button class="btn block" id="teamV" style="margin-top:8px">👥 Team 三访 (leader view)</button>' : ''}</div>`;
+  }
+  function wireTodayCard() {
+    const b = $('#dayRev'); if (b) b.onclick = () => { location.hash = '#/day/' + todayISO(); };
+    const t = $('#teamV'); if (t) t.onclick = () => { location.hash = '#/team'; };
+  }
+
+  function dayScreen(date) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) date = todayISO();
+    const r = reports[date] || {reflection: '', tomorrow: '', hideNames: false};
+    const items = FU.meetingsOn(cases, date);
+    const days = FU.dayStats(cases), w = FU.weekStats(days, date), st = FU.streak(days, date);
+    const lang = settings.reportLang || 'zh', metN = new Set(items.map(x => x.c.id)).size;
+    const text = () => FU.reportText({date, agentName: settings.name, lang, hideNames: r.hideNames, streak: st, week: w, reflection: r.reflection, tomorrow: r.tomorrow,
+      items: items.map(({c, m}) => ({key: c.id, name: c.client.name, type: m.type, nextStep: m.nextStep, outcome: m.outcome, sentPdf: m.sentPdf}))});
+    const touch = () => { r.updated = new Date().toISOString(); reports[date] = r; saveReports(); $('#rTxt').textContent = text(); };
+    app.innerHTML = bar('三访 report', '#/', `<input type="date" id="dPick" class="datepick" value="${date}" max="${todayISO()}" aria-label="Pick a day">`) + `<div class="wrap">
+      <div class="card"><h2>Met on ${esc(date)} (${metN}/3)</h2>
+        ${items.length ? items.map(({c, m}) => `<a class="item" href="#/case/${c.id}"><div class="t"><b>${esc(c.client.name)}</b><span>${esc(FU.typeLabel(m.type))}${m.nextStep ? ' · ' + esc(m.nextStep) : ''}</span></div><div class="amt">${m.outcome === 'closed' || m.type === 'closing' ? '🎉' : m.sentPdf ? 'PDF' : ''}</div></a>`).join('') : '<p class="muted">No meetings recorded for this day yet.</p>'}
+        <button class="btn block" id="quickAdd">+ Add someone I met (quick log)</button></div>
+      <div class="card"><h2>💡 Reflection</h2><div class="f"><textarea id="rRef" rows="3" placeholder="What went well, what to improve…">${esc(r.reflection)}</textarea></div>
+        <h2 style="margin-top:6px">🎯 Tomorrow</h2><div class="f"><textarea id="rTom" rows="2" placeholder="Who you will meet, what you will do…">${esc(r.tomorrow)}</textarea></div>
+        <button class="btn sm" id="rMic">🎙 Speak into the box</button> <span class="muted" id="rMicT">Tap a box first, then speak.</span></div>
+      <div class="card"><h2>Report for the WhatsApp group</h2>
+        <div class="seg" id="rLang">${[['zh', '中文'], ['en', 'English']].map(([k, l]) => `<button type="button" data-l="${k}" aria-pressed="${lang === k}">${l}</button>`).join('')}</div>
+        <label class="chk"><input type="checkbox" id="rHide" ${r.hideNames ? 'checked' : ''}> Hide client names (Client A, B, C)</label>
+        <pre class="rpt" id="rTxt"></pre>
+        <p class="muted">Use 称呼 only. Client details stay in your farm, not in the group.</p>
+        <label class="chk"><input type="checkbox" id="rShare" ${settings.shareTally !== false ? 'checked' : ''}> Share my numbers with my leader (counts only, no client names)</label></div>
+    </div>
+    <div class="dock"><button class="btn primary" id="rCopy">Copy report for WhatsApp</button></div>`;
+    $('#rTxt').textContent = text();
+    let lastBox = 'rRef';
+    ['rRef', 'rTom'].forEach(id => { $('#' + id).addEventListener('focus', () => { lastBox = id; }); });
+    $('#rRef').oninput = e => { r.reflection = e.target.value; touch(); };
+    $('#rTom').oninput = e => { r.tomorrow = e.target.value; touch(); };
+    $('#rHide').onchange = e => { r.hideNames = e.target.checked; touch(); };
+    $('#rShare').onchange = e => { settings.shareTally = e.target.checked; save('pspt.settings', settings); };
+    $$('#rLang button').forEach(b => b.onclick = () => { settings.reportLang = b.dataset.l; save('pspt.settings', settings); route(); });
+    $('#dPick').onchange = e => { if (e.target.value) location.hash = '#/day/' + e.target.value; };
+    $('#quickAdd').onclick = () => quickAdd(date);
+    $('#rMic').onclick = () => voiceInto($('#rMic'), $('#rMicT'), txt => {
+      const box = $('#' + lastBox); box.value = (box.value ? box.value.trim() + ' ' : '') + txt; box.dispatchEvent(new Event('input'));
+    });
+    $('#rCopy').onclick = async () => {
+      const t = text();
+      try { await navigator.clipboard.writeText(t); toast('Copied. Paste it in the WhatsApp group.'); } catch (e) { toast('Copy did not work. Press and hold the report text to copy it.'); }
+      r.done = true; touch();
+      if (settings.shareTally !== false && session()) {
+        const d = FU.dayStats(cases)[date] || {met: 0, pres: 0, closed: 0};
+        post({op: 'tallyput', date, met: d.met, pres: d.pres, closed: d.closed}).catch(() => {});   // numbers only
+      }
+    };
+  }
+
+  /* quick log for someone met without a voice note */
+  function quickAdd(date) {
+    const el = sheet(`<div class="sheet-top"><h3>Quick log</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div>
+      <p class="muted">For someone you met but didn't record. It is saved to their farm.</p>
+      <div class="f"><label>Client</label><select id="qWho"><option value="">New client…</option>${cases.filter(x => !x.sample).sort((a, b) => a.client.name.localeCompare(b.client.name)).map(x => `<option value="${x.id}">${esc(x.client.name)}${x.client.nickname ? ' (' + esc(x.client.nickname) + ')' : ''}</option>`).join('')}</select></div>
+      <div class="f" id="qNewF"><label>Name (称呼)</label><input id="qName" placeholder="e.g. Ah Seng"></div>
+      <div class="grid2"><div class="f"><label>Type</label><select id="qType">${FU.MEETING_TYPES.map(t => `<option value="${t.id}">${t.zh} · ${t.en}</option>`).join('')}</select></div>
+      <div class="f"><label>Result</label><select id="qOut"><option value="none">No decision yet</option><option value="considering">Considering</option><option value="closed">Closed 🎉</option><option value="not_interested">Not interested</option></select></div></div>
+      <div class="f"><label>Next step (optional)</label><input id="qNext"></div>
+      <div class="row"><button class="btn" data-close>Cancel</button><button class="btn primary" id="qSave">Save</button></div>`);
+    $('#qWho', el).onchange = e => { $('#qNewF', el).hidden = !!e.target.value; };
+    $('#qSave', el).onclick = () => {
+      let c = getCase($('#qWho', el).value);
+      if (!c) {
+        const name = $('#qName', el).value.trim(); if (!name) return $('#qName', el).classList.add('flag');
+        const now = new Date().toISOString();
+        c = {id: PS.uid(), created: now, updated: now, client: {name, nickname: '', age: null, income: null}, guide: Object.assign({}, settings.guide), policies: [], meetings: []};
+        cases.push(c);
+      }
+      const d = FU.normalizeDraft({meeting: {type: $('#qType', el).value, outcome: $('#qOut', el).value, nextStep: $('#qNext', el).value, summary: 'Quick log'}}, []);
+      FU.applyToFarm(c, d, {date});
+      saveCases(); closeSheet(); toast('Logged'); route();
+    };
+  }
+
+  /* tap to record, tap to stop, text comes back (used by the daily review boxes) */
+  let miniRec = null;
+  async function voiceInto(btn, label, onText) {
+    if (miniRec) { miniRec.stop(); return; }
+    if (!navigator.mediaDevices || !window.MediaRecorder) return toast('This browser cannot record. Use the keyboard mic.');
+    if (!session() && !(await signIn())) return;
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({audio: true}); } catch (e) { return toast('Microphone not allowed. Use the keyboard mic.'); }
+    const type = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'].find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || '';
+    const chunks = [], t0 = Date.now();
+    miniRec = new MediaRecorder(stream, type ? {mimeType: type, audioBitsPerSecond: 48000} : undefined);
+    miniRec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    const tick = setInterval(() => { const s = Math.floor((Date.now() - t0) / 1000); label.textContent = `● ${s}s · tap again to stop`; if (s >= 180) miniRec && miniRec.stop(); }, 500);
+    miniRec.onstop = async () => {
+      clearInterval(tick); stream.getTracks().forEach(t => t.stop()); miniRec = null; btn.textContent = '🎙 Speak into the box';
+      const blob = new Blob(chunks, {type: (type || 'audio/mp4').split(';')[0]});
+      if (blob.size < 2000) { label.textContent = 'Too short.'; return; }
+      label.textContent = 'Turning voice into text…';
+      try { const r = await post({op: 'transcribe', audio: await blobB64(blob), mime: blob.type, hint: FU.HINT}); label.textContent = ''; if (r.text) onText(String(r.text).trim()); }
+      catch (e) { label.textContent = e.code === 'invalid_request' ? 'Voice needs the team server update.' : 'Could not convert. Try again or type.'; }
+    };
+    miniRec.start(1000); btn.textContent = '■ Stop';
+  }
+
+  /* leader view: numbers only, from the team server */
+  async function teamScreen() {
+    app.innerHTML = bar('Team 三访', '#/') + '<div class="wrap"><div class="spin"></div></div>';
+    let tally;
+    try { tally = (await post({op: 'tallyget'})).tally || {}; }
+    catch (e) {
+      $('.wrap').innerHTML = `<div class="checks">${e.code === 'not_allowed' ? 'Only the leader (owner code) can see the team view.' : e.code === 'invalid_request' ? 'The team view needs the latest team server update.' : 'Could not load the team numbers. Check your connection.'}</div>`;
+      return;
+    }
+    const t = todayISO(), rows = Object.values(tally).map(a => {
+      const w = FU.weekStats(a.days, t), d = a.days[t] || {met: 0, pres: 0, closed: 0};
+      return {name: a.name, today: d.met, week: w.met, hit: w.hit, pres: w.pres, closed: w.closed, streak: FU.streak(a.days, t), last: Object.keys(a.days).sort().pop() || ''};
+    }).sort((a, b) => b.week - a.week || b.today - a.today);
+    $('.wrap').innerHTML = `<div class="card"><h2>Today ${esc(t)} · this week from Monday</h2>
+      <p class="muted" style="margin-bottom:8px">Agents' own numbers, sent when they copy their 三访 report. No client names.</p>
+      ${rows.length ? `<table class="team"><thead><tr><th>Agent</th><th>Today</th><th>Week</th><th>Days 3+</th><th>🔥</th><th>🎉</th></tr></thead><tbody>${rows.map(x => `<tr><td><b>${esc(x.name)}</b><span>last report ${esc(x.last)}</span></td><td class="${x.today >= 3 ? 'ok' : ''}">${x.today}/3</td><td>${x.week}</td><td>${x.hit}</td><td>${x.streak || ''}</td><td>${x.closed || ''}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">No reports yet. Numbers appear when agents tap "Copy report for WhatsApp".</p>'}
+    </div>`;
   }
 
   /* ---------- staying signed in ----------
