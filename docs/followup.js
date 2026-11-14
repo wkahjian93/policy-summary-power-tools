@@ -2,7 +2,8 @@
 (function (root) {
   'use strict';
   const MEETING_TYPES = [
-    {id: 'fact_find', zh: '了解需求', en: 'Fact find'},
+    {id: 'fact_find', zh: '了解需求 / Open', en: 'Fact find / Open'},
+    {id: 'recruitment', zh: '招募 Recruitment', en: 'Recruitment'},
     {id: 'presentation', zh: 'Proposal 讲解', en: 'Presentation'},
     {id: 'follow_up', zh: 'Follow up', en: 'Follow-up'},
     {id: 'closing', zh: '成交', en: 'Closing'},
@@ -31,8 +32,8 @@
     {k: 'handling', zh: '你怎样处理 objection？', en: 'How did you handle them?'},
     {k: 'next', zh: '下一步跟他约了什么？', en: 'What next move did you arrange?'}
   ];
-  const TAGS = ['P', 'O', 'R'];   // P = presentation, O = opening, R = recruit
-  const tagsFor = type => (type === 'presentation' || type === 'closing' ? ['P'] : ['O']);
+  const TAGS = ['O', 'F', 'P', 'R'];   // O = appointment made, F = follow up, P = presentation, R = recruitment activity
+  const tagsFor = type => ({presentation: ['P'], closing: ['P'], follow_up: ['F'], recruitment: ['R']})[type] || ['O'];
 
   function hintFor(clientName) { return (clientName ? 'Client: ' + clientName + '. ' : '') + HINT; }
 
@@ -58,11 +59,11 @@
       '- whatsapp: a short WhatsApp message (3-6 lines) in the same language, to send together with the PDF, ending with a soft ask to meet again.',
       '- "qa" is the agent\'s private farm record. Answer each question briefly from what the agent said, in the language the agent mostly used; leave "" when not mentioned: ' + QUESTIONS.map(q => q.k + ' = ' + q.en).join('; ') + '. CFF = the client\'s financial priorities from the fact find. Plan and ANP: write exactly what the agent said (plan names, annualised premium); do not calculate.',
       '- "reportNote": 1-3 short sentences for the team\'s daily 三访 report, in the agent\'s style, e.g. "Direct approach, simple survey done, holding a company medical card, proposed income protection, will consider. Will follow up." Use the agent\'s main language (English if mixed). No IC, phone or medical details.',
-      '- "tags": "P" if a plan/proposal was presented, "O" if it was an opening/approach/fact-find, "R" if recruitment/career was discussed (e.g. CFG test, part-time, joining). One or more.',
+      '- "tags": "O" if an appointment was made / first opening, "F" if it was a follow-up meeting, "P" if a plan/proposal was presented, "R" if it was a recruitment activity (career talk, CFG test, part-time, joining). One or more.',
       '- "time": the meeting time as HH:MM 24-hour if the agent said it, else null.',
       'Answer with JSON only:',
       '{"client":{"name":"","nickname":"","family":"","work":"","personality":"","cares":[""],"objections":[""]},' +
-      '"meeting":{"type":"fact_find|presentation|follow_up|closing|service|other","summary":"2-4 factual sentences for the agent\'s own record","nextStep":"","followUpDate":"YYYY-MM-DD or null","outcome":"closed|considering|not_interested|none"},' +
+      '"meeting":{"type":"fact_find|recruitment|presentation|follow_up|closing|service|other","summary":"2-4 factual sentences for the agent\'s own record","nextStep":"","followUpDate":"YYYY-MM-DD or null","outcome":"closed|considering|not_interested|none"},' +
       '"letter":{"title":"","greeting":"","discussed":[""],"matters":[""],"recommendation":"","nextStep":"","closing":""},' +
       '"concepts":["concept id"],"whatsapp":"","numbers":[{"what":"","value":""}],' +
       '"qa":{' + QUESTIONS.map(q => '"' + q.k + '":""').join(',') + '},"reportNote":"","tags":["P|O|R"],"time":"HH:MM or null"}',

@@ -904,7 +904,7 @@
       <div class="card"><h2>For today's 三访 report</h2>
         <div class="grid2"><div class="f"><label>Time</label><input id="mTime" type="time" value="${esc(d.time)}"></div>
         <div class="f"><label>Type</label><div class="tagrow">${FU.TAGS.map(t => `<button type="button" class="chip" data-tag="${t}" aria-pressed="${d.tags.includes(t)}">${t}</button>`).join('')}</div></div></div>
-        <p class="muted" style="margin:-4px 0 8px">P = presentation · O = opening · R = recruit</p>
+        <p class="muted" style="margin:-4px 0 8px">O = appointment made · F = follow up · P = presentation · R = recruitment</p>
         <div class="f"><label>Report note (what the group sees)</label>${ta('mNote', d.reportNote, 3)}</div>
       </div>
     </div>
@@ -1089,7 +1089,9 @@
     const text = () => FU.reportText({date, agentName: settings.name, reportName: settings.reportName, base: settings.base, opening: settings.reportOpening,
       targets: settings.targets, hideNames: r.hideNames, week: w, month: mo, reflection: r.reflection, tomorrow: r.tomorrow,
       items: items.map(({c, m}) => ({name: c.client.name, time: m.time, tags: m.tags && m.tags.length ? m.tags : FU.tagsFor(m.type), note: FU.noteFor(m)}))});
-    const touch = () => { r.updated = new Date().toISOString(); reports[date] = r; saveReports(); $('#rTxt').textContent = text(); };
+    /* the report box shows the agent's own edits if any, otherwise the report built from today's visits */
+    const shown = () => (typeof r.edited === 'string' ? r.edited : text());
+    const touch = () => { r.updated = new Date().toISOString(); reports[date] = r; saveReports(); const b = $('#rTxt'); if (b && typeof r.edited !== 'string') b.value = text(); };
     app.innerHTML = bar('三访 report', '#/', `<input type="date" id="dPick" class="datepick" value="${date}" max="${todayISO()}" aria-label="Pick a day">`) + `<div class="wrap">
       <div class="card"><h2>Met on ${esc(date)} (${metN}/3)</h2>
         ${items.length ? items.map(({c, m}, i) => `<button type="button" class="item" data-visit="${i}"><div class="t"><b>${esc(c.client.name)}</b><span>${esc(FU.timeLabel(m.time) || 'time?')} · ${esc((m.tags && m.tags.length ? m.tags : FU.tagsFor(m.type)).join(','))} · ${esc(FU.typeLabel(m.type))}</span><span>${esc(FU.noteFor(m) || 'Tap to add a report note')}</span></div><div class="amt">${m.outcome === 'closed' || m.type === 'closing' ? '🎉' : '✎'}</div></button>`).join('') : '<p class="muted">No meetings recorded for this day yet.</p>'}
@@ -1100,12 +1102,19 @@
       <div class="card"><h2>Report for the WhatsApp group</h2>
         ${settings.reportName || settings.base ? '' : '<p class="muted" style="margin-bottom:6px">Set your report name and base (e.g. Rex👑, SG Farlim) in Settings → 👤 My profile.</p>'}
         <label class="chk"><input type="checkbox" id="rHide" ${r.hideNames ? 'checked' : ''}> Hide client names (Client A, B, C)</label>
-        <pre class="rpt" id="rTxt"></pre>
+        <p class="muted" style="margin:8px 0 4px">Edit anything below before copying.</p>
+        <textarea class="rpt" id="rTxt" rows="16"></textarea>
+        <div id="rEdited" ${typeof r.edited === 'string' ? '' : 'hidden'} class="flagnote"><span>You edited the report, so new visits won't be added to it automatically.</span><button type="button" id="rReset">Undo my edits</button></div>
         <p class="muted">Use 称呼 only. Client details stay in your farm, not in the group.</p>
         <label class="chk"><input type="checkbox" id="rShare" ${settings.shareTally !== false ? 'checked' : ''}> Share my numbers with my leader (counts only, no client names)</label></div>
     </div>
     <div class="dock"><button class="btn primary" id="rCopy">Copy report for WhatsApp</button></div>`;
-    $('#rTxt').textContent = text();
+    $('#rTxt').value = shown();
+    $('#rTxt').addEventListener('input', e => { r.edited = e.target.value; $('#rEdited').hidden = false; r.updated = new Date().toISOString(); reports[date] = r; saveReports(); });
+    $('#rReset').onclick = async () => {
+      if (!(await confirmBox('Undo your edits?', 'The report is rebuilt from today\'s visits, reflection and tomorrow. Your changes to the text are removed.', 'Undo edits'))) return;
+      delete r.edited; touch(); route();
+    };
     let lastBox = 'rRef';
     ['rRef', 'rTom'].forEach(id => { $('#' + id).addEventListener('focus', () => { lastBox = id; }); });
     $('#rRef').oninput = e => { r.reflection = e.target.value; touch(); };
@@ -1119,7 +1128,7 @@
       const box = $('#' + lastBox); box.value = (box.value ? box.value.trim() + ' ' : '') + txt; box.dispatchEvent(new Event('input'));
     });
     $('#rCopy').onclick = async () => {
-      const t = text();
+      const t = $('#rTxt').value;
       try { await navigator.clipboard.writeText(t); toast('Copied. Paste it in the WhatsApp group.'); } catch (e) { toast('Copy did not work. Press and hold the report text to copy it.'); }
       r.done = true; touch();
       if (settings.shareTally !== false && session()) {
@@ -1158,6 +1167,7 @@
       <div class="f"><label>Next step (optional)</label><input id="qNext"></div>
       <div class="row"><button class="btn" data-close>Cancel</button><button class="btn primary" id="qSave">Save</button></div>`);
     wireTags(el, qTags);
+    $('#qType', el).onchange = e => { qTags.splice(0, qTags.length, ...FU.tagsFor(e.target.value)); $$('[data-tg]', el).forEach(b => b.setAttribute('aria-pressed', qTags.includes(b.dataset.tg))); };
     $('#qWho', el).onchange = e => { $('#qNewF', el).hidden = !!e.target.value; };
     $('#qSave', el).onclick = () => {
       let c = getCase($('#qWho', el).value);

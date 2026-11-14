@@ -21,14 +21,14 @@ Every client has a farm card: a **Before you meet** brief (last meeting, family 
 
 **While recording**, the record screen shows the REDEFINE guide (11 questions: time spent, what you did, CFF priorities, which stage had an issue (Relax–Disturb–Release–Close), income and cash flow, hot button, concept, plan and ANP, objections, how you handled them, next move). You don't have to cover all of them. The AI files your answers under each question in the client's farm, and you can edit them on the review screen.
 
-**Each visit** also gets a time, P / O / R tags (P = presentation, O = opening, R = recruit) and a short report note that the group sees. The AI suggests all three; tap a visit in the daily report to change them.
+**Each visit** also gets a time, O / F / P / R tags (O = appointment made, F = follow up, P = presentation, R = recruitment activity) and a short report note that the group sees. The AI suggests all three; tap a visit in the daily report to change them.
 
 The home screen shows **三访 today** (people met out of 3) and this week's V and R against your targets.
 
 1. In the evening tap **📋 Daily review & report**. Today's visits are listed in time order.
-2. Met someone you didn't record? Tap **+ Add someone I met (quick log)** with time, P/O/R and note.
+2. Met someone you didn't record? Tap **+ Add someone I met (quick log)** with type (including 了解需求 / Open and 招募 Recruitment), time, O/F/P/R and note. Choosing a type ticks the usual tag.
 3. Optional: type or speak a reflection and tomorrow's plan; they are added at the end.
-4. Tap **Copy report for WhatsApp** and paste it in the group. Tick **Hide client names** to show Client A, B, C.
+4. The report is in an editable box: change anything, then tap **Copy report for WhatsApp** and paste it in the group. Your edits are kept; **Undo my edits** rebuilds it from the day's visits. Tick **Hide client names** to show Client A, B, C.
 
 The report follows the team format:
 
@@ -107,7 +107,7 @@ Clients are locked with your passphrase before they leave the device. The server
 ## For maintenance
 
 - `docs/` is the app. `logic.js` handles recognition and calculations, `report.js` builds the PDF pages, `app.js` runs the screens, and `config.js` holds the server address.
-- `node test.js` runs 98 checks covering recognition, messy numbers, the never-guess rules and the summary maths.
+- `node test.js` runs 101 checks covering recognition, messy numbers, the never-guess rules and the summary maths.
 - `node serve.js` previews the app at http://localhost:5193.
 - `samples/` holds the sample PDF made by the app.
 - `node test-sync-server.js` runs the real team server code in memory on port 5194 to test sync (open localhost:5194 and 127.0.0.1:5194 as two devices; team code `test-team-code`).

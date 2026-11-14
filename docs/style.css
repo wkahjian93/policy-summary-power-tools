@@ -193,7 +193,7 @@ details.card summary::-webkit-details-marker{display:none}
 .sf-dots i.on{background:var(--gold);border-color:var(--gold)}
 .sanfang .muted{margin:6px 0 10px}
 .datepick{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:8px;padding:6px;font-size:13px;color-scheme:dark;max-width:150px}
-.rpt{white-space:pre-wrap;font:14px/1.55 Inter,system-ui,sans-serif;background:#F4F1E8;border-radius:12px;padding:12px;margin:10px 0}
+.rpt{display:block;width:100%;white-space:pre-wrap;font:15px/1.55 Inter,system-ui,sans-serif;background:#F4F1E8;border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 10px;color:var(--text);resize:vertical}
 table.team{width:100%;border-collapse:collapse;font-size:13.5px}
 table.team th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:right;padding:6px 4px;border-bottom:2px solid var(--ink)}
 table.team th:first-child,table.team td:first-child{text-align:left}

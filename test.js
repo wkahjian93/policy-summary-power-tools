@@ -198,6 +198,9 @@ ${rex[5].note}`;
   eq('qa answers kept, unknown keys dropped', [dq.qa.duration, dq.qa.plan, dq.qa.cff, 'made' in dq.qa], ['45 min', 'Income protection, ANP RM4,200', '', false]);
   eq('tags cleaned, time padded, IC scrubbed from report note', [dq.tags, dq.time, /900101/.test(dq.reportNote)], [['O', 'R'], '09:05', false]);
   eq('no tags from AI -> from meeting type', FU.normalizeDraft({meeting: {type: 'presentation'}}, []).tags, ['P']);
+  eq('default tags: open O, follow up F, recruitment R', ['fact_find', 'follow_up', 'recruitment', 'service'].map(t => FU.tagsFor(t).join()), ['O', 'F', 'R', 'O']);
+  eq('recruitment is a meeting type, fact find says Open', [FU.MEETING_TYPES.some(t => t.id === 'recruitment'), FU.MEETING_TYPES.find(t => t.id === 'fact_find').zh], [true, '了解需求 / Open']);
+  eq('tags kept in O,F,P,R order', FU.normalizeDraft({tags: ['R', 'P', 'F']}, []).tags, ['F', 'P', 'R']);
 }
 
 console.log('Summary maths (sample client)');
