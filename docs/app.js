@@ -52,6 +52,13 @@
   function route() {
     closeSheet(); leaveGuard = null;
     if (pendingNext) { const p = pendingNext; pendingNext = null; setTimeout(() => nextSheet(p), 0); }   // after saving a meeting: offer Calendar and 定联
+    /* link from 定联 (Customer Relationship App) after "Presented": #/record?name=<name> starts a recording for that person */
+    const qm = location.hash.match(/^#\/?record\?(.*)$/);
+    if (qm) {
+      const name = (new URLSearchParams(qm[1]).get('name') || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+      history.replaceState(null, '', location.pathname + location.search + '#/');
+      return recordFor(name);
+    }
     const h = location.hash.replace(/^#\/?/, '').split('/');
     window.scrollTo(0, 0);
     if (h[0] === 'record') return recordScreen(h[1] && getCase(h[1]) ? h[1] : null);
@@ -720,6 +727,15 @@
     location.hash = '#/record' + (caseId ? '/' + caseId : '');
   }
 
+  // open the recorder for a named person: their farm record if the name matches exactly, else a new client with that name
+  async function recordFor(name) {
+    const n = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const m = name && cases.find(x => !x.sample && (n(x.client.name) === n(name) || (x.client.nickname && n(x.client.nickname) === n(name))));
+    if (m) return startRecord(m.id);
+    await startRecord(null);
+    if (name && rec && !rec.caseId && !rec.transcript) { rec.nameHint = name; saveRec(); if (/^#\/?record$/.test(location.hash)) route(); }
+  }
+
   function recordScreen(caseId) {
     if (!rec || rec.caseId !== (caseId || null)) { rec = {caseId: caseId || null, step: 'capture', transcript: '', lang: settings.fuLang || 'zh', draft: null}; recPhotos = []; saveRec(); }
     const c = caseId ? getCase(caseId) : null;
@@ -747,7 +763,7 @@
     }
     /* capture */
     app.innerHTML = bar('Record a meeting', back, rec.transcript ? discard : '') + `<div class="wrap">${stepBar}
-      ${c ? '' : `<div class="card"><h2>Which client?</h2><div class="f"><select id="pickC"><option value="">New client (the app takes the name from what you say)</option>${cases.filter(x => !x.sample).sort((a, b) => (b.updated || '').localeCompare(a.updated || '')).map(x => `<option value="${x.id}">${esc(x.client.name)}${x.client.nickname ? ' (' + esc(x.client.nickname) + ')' : ''}</option>`).join('')}</select></div></div>`}
+      ${c ? '' : `<div class="card"><h2>Which client?</h2><div class="f">${rec.nameHint ? `<p style="margin-bottom:8px">From 定联: <b>${esc(rec.nameHint)}</b> (new client). If they're already in your farm, pick them below instead.</p>` : ''}<select id="pickC"><option value="">${rec.nameHint ? 'New client: ' + esc(rec.nameHint) : 'New client (the app takes the name from what you say)'}</option>${cases.filter(x => !x.sample).sort((a, b) => (b.updated || '').localeCompare(a.updated || '')).map(x => `<option value="${x.id}">${esc(x.client.name)}${x.client.nickname ? ' (' + esc(x.client.nickname) + ')' : ''}</option>`).join('')}</select></div></div>`}
       <div class="card mic-card">
         <p class="muted">Tell it like you'd tell your leader. Mix Mandarin, Hokkien, Cantonese, English and Malay freely.</p>
         <button class="mic" id="mic" aria-label="Start recording"><span></span></button>
@@ -849,9 +865,11 @@
     sheet('<h3>Writing the follow-up…</h3><div class="spin"></div><p style="text-align:center">About 20–40 seconds.</p>');
     $('#sheet').dataset.lock = '1';
     try {
-      const r = await post({op: 'ai', prompt: FU.buildPrompt({transcript: rec.transcript, lang: rec.lang, agentName: settings.name, client: c, concepts: KC.CONCEPTS, date: todayISO()})});
+      const known = c || (rec.nameHint ? {client: {name: rec.nameHint}} : null);   // a name sent over from 定联
+      const r = await post({op: 'ai', prompt: FU.buildPrompt({transcript: rec.transcript, lang: rec.lang, agentName: settings.name, client: known, concepts: KC.CONCEPTS, date: todayISO()})});
       if (r.truncated) throw {code: 'invalid_json'};
       rec.draft = FU.normalizeDraft(parseJSON(r.text), KC.CONCEPTS.map(k => k.id));
+      if (!c && rec.nameHint && !rec.draft.client.name) rec.draft.client.name = rec.nameHint;
       rec.pdfName = c ? (c.client.nickname && !rec.draft.client.name ? c.client.nickname : (rec.draft.client.name || c.client.name)) : rec.draft.client.name;
       if (!c) { const m = FU.matchClient(cases, rec.draft.client.name); rec.matchId = m ? m.id : ''; }
       rec.step = 'review'; saveRec(); closeSheet(); route();
