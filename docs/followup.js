@@ -17,6 +17,23 @@
     'Words: medical card, 医药卡, critical illness, CI, 危疾, TPD, 保费 premium, 保额 sum assured, ILP, investment-linked, takaful, Great Eastern, ePartner, proposal, presentation, fact find, follow up, ' +
     'income protection, 收入保障, 储蓄, 退休, 孩子, 太太, 老板, uncle, auntie, boss, lah, lor, meh, 咯, 啦, 咩, 酱, 几时, 没有钱, 考虑, Penang, KL, RM, ringgit.';
 
+  /* REDEFINE farm guide: shown while recording, and the AI files the answers under these keys */
+  const QUESTIONS = [
+    {k: 'duration', zh: '花了多久时间？', en: 'How long did it take?'},
+    {k: 'done', zh: '简短总结：你做了什么？', en: 'Short summary: what did you do?'},
+    {k: 'cff', zh: '他的 CFF 优先顺序和原因？', en: 'His CFF priorities and reasons?'},
+    {k: 'stage', zh: '哪个阶段遇到问题？问题是什么？(Relax—Disturb—Release—Close)', en: 'Which stage had an issue, and what? (Relax–Disturb–Release–Close)'},
+    {k: 'income', zh: '他的收入和现金流？', en: 'His income and cash flow?'},
+    {k: 'hot', zh: '有找到 hot button 吗？', en: 'Any hot button found?'},
+    {k: 'concept', zh: '你跟他讲了什么 concept？', en: 'What concept did you propose?'},
+    {k: 'plan', zh: '你 release 了什么 plan 和 ANP？', en: 'What plan and ANP did you release?'},
+    {k: 'objections', zh: '他有什么 objection？', en: 'What were the objections?'},
+    {k: 'handling', zh: '你怎样处理 objection？', en: 'How did you handle them?'},
+    {k: 'next', zh: '下一步跟他约了什么？', en: 'What next move did you arrange?'}
+  ];
+  const TAGS = ['P', 'O', 'R'];   // P = presentation, O = opening, R = recruit
+  const tagsFor = type => (type === 'presentation' || type === 'closing' ? ['P'] : ['O']);
+
   function hintFor(clientName) { return (clientName ? 'Client: ' + clientName + '. ' : '') + HINT; }
 
   function buildPrompt(o) {
@@ -39,11 +56,16 @@
       '- In the letter you may mention medical issues only as the client\'s concern in general words, never a diagnosis.',
       '- List EVERY number the agent mentioned (premiums, sum assured, ages, years, RM amounts, percentages) in "numbers" so the agent can double-check them.',
       '- whatsapp: a short WhatsApp message (3-6 lines) in the same language, to send together with the PDF, ending with a soft ask to meet again.',
+      '- "qa" is the agent\'s private farm record. Answer each question briefly from what the agent said, in the language the agent mostly used; leave "" when not mentioned: ' + QUESTIONS.map(q => q.k + ' = ' + q.en).join('; ') + '. CFF = the client\'s financial priorities from the fact find. Plan and ANP: write exactly what the agent said (plan names, annualised premium); do not calculate.',
+      '- "reportNote": 1-3 short sentences for the team\'s daily 三访 report, in the agent\'s style, e.g. "Direct approach, simple survey done, holding a company medical card, proposed income protection, will consider. Will follow up." Use the agent\'s main language (English if mixed). No IC, phone or medical details.',
+      '- "tags": "P" if a plan/proposal was presented, "O" if it was an opening/approach/fact-find, "R" if recruitment/career was discussed (e.g. CFG test, part-time, joining). One or more.',
+      '- "time": the meeting time as HH:MM 24-hour if the agent said it, else null.',
       'Answer with JSON only:',
       '{"client":{"name":"","nickname":"","family":"","work":"","personality":"","cares":[""],"objections":[""]},' +
       '"meeting":{"type":"fact_find|presentation|follow_up|closing|service|other","summary":"2-4 factual sentences for the agent\'s own record","nextStep":"","followUpDate":"YYYY-MM-DD or null","outcome":"closed|considering|not_interested|none"},' +
       '"letter":{"title":"","greeting":"","discussed":[""],"matters":[""],"recommendation":"","nextStep":"","closing":""},' +
-      '"concepts":["concept id"],"whatsapp":"","numbers":[{"what":"","value":""}]}',
+      '"concepts":["concept id"],"whatsapp":"","numbers":[{"what":"","value":""}],' +
+      '"qa":{' + QUESTIONS.map(q => '"' + q.k + '":""').join(',') + '},"reportNote":"","tags":["P|O|R"],"time":"HH:MM or null"}',
       'AGENT\'S NOTE:\n' + String(o.transcript || '').slice(0, 12000)
     ].join('\n');
   }
@@ -51,13 +73,18 @@
   const str = v => String(v == null ? '' : v).trim();
   const list = v => (Array.isArray(v) ? v : v ? [v] : []).map(str).filter(Boolean).slice(0, 8);
   const dateOk = v => /^\d{4}-\d{2}-\d{2}$/.test(str(v)) ? str(v) : '';
+  const timeOk = v => { const t = str(v).match(/^(\d{1,2}):(\d{2})$/); return t && +t[1] < 24 && +t[2] < 60 ? t[1].padStart(2, '0') + ':' + t[2] : ''; };
   /* strip anything that looks like an IC, phone or long account number, in case the AI copies one */
   const scrub = s => str(s).replace(/\b\d{6}-?\d{2}-?\d{4}\b/g, '[removed]').replace(/(\+?6?01\d[-\s]?\d{3,4}[-\s]?\d{4})/g, '[removed]').replace(/\b\d{10,}\b/g, '[removed]');
 
   function normalizeDraft(raw, validIds) {
     const r = raw || {}, c = r.client || {}, m = r.meeting || {}, l = r.letter || {};
     const ids = new Set(validIds || []);
+    const type = MEETING_TYPES.some(t => t.id === m.type) ? m.type : 'other';
+    const qa = {}; QUESTIONS.forEach(q => { qa[q.k] = scrub(r.qa && r.qa[q.k]); });
+    const tags = TAGS.filter(t => list(r.tags).map(x => x.toUpperCase()).includes(t));
     return {
+      qa, reportNote: scrub(r.reportNote), tags: tags.length ? tags : tagsFor(type), time: timeOk(r.time),
       client: {name: scrub(c.name), nickname: scrub(c.nickname), family: scrub(c.family), work: scrub(c.work), personality: scrub(c.personality),
         cares: list(c.cares).map(scrub), objections: list(c.objections).map(scrub)},
       meeting: {type: MEETING_TYPES.some(t => t.id === m.type) ? m.type : 'other', summary: scrub(m.summary), nextStep: scrub(m.nextStep),
@@ -86,9 +113,10 @@
     for (const k of ['cares', 'objections']) { t[k] = t[k] || []; d.client[k].forEach(v => { if (!t[k].some(x => x.toLowerCase() === v.toLowerCase())) t[k].push(v); }); }
     if (d.client.nickname && !c.client.nickname) c.client.nickname = d.client.nickname;
     c.meetings = c.meetings || [];
-    const m = Object.assign({id: Math.random().toString(36).slice(2, 10), date: extra.date, concepts: d.concepts.slice(), sentPdf: !!extra.sentPdf, letterTitle: d.letter.title}, d.meeting);
+    const m = Object.assign({id: Math.random().toString(36).slice(2, 10), date: extra.date, time: d.time || extra.time || '', concepts: d.concepts.slice(), sentPdf: !!extra.sentPdf, letterTitle: d.letter.title,
+      tags: (d.tags || []).slice(), reportNote: d.reportNote || '', qa: Object.assign({}, d.qa || {})}, d.meeting);
     c.meetings.push(m);
-    c.meetings.sort((a, b) => a.date.localeCompare(b.date));
+    c.meetings.sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
     c.updated = new Date().toISOString();
     return m;
   }
@@ -111,18 +139,21 @@
 
   /* ---------- 三访 daily report ---------- */
   const TARGET = 3;
+  const TARGETS = {week: 18, recruit: 6, month: 72};   // defaults; the agent can change them in Settings
   function meetingsOn(cases, date) {
     const out = [];
     (cases || []).forEach(c => { if (!c.sample) (c.meetings || []).forEach(m => { if (m.date === date) out.push({c, m}); }); });
-    return out;
+    return out.sort((a, b) => (a.m.time || '99').localeCompare(b.m.time || '99'));
   }
-  /* per day: distinct clients met, presentations, closed */
+  const isRecruit = m => (m.tags || []).includes('R');
+  /* per day: distinct clients met, presentations, closed, recruitment visits */
   function dayStats(cases) {
     const days = {};
     (cases || []).forEach(c => { if (c.sample) return; (c.meetings || []).forEach(m => {
-      const d = days[m.date] = days[m.date] || {met: 0, pres: 0, closed: 0, ids: {}};
+      const d = days[m.date] = days[m.date] || {met: 0, pres: 0, closed: 0, rec: 0, ids: {}, recIds: {}};
       if (!d.ids[c.id]) { d.ids[c.id] = 1; d.met++; }
-      if (m.type === 'presentation') d.pres++;
+      if (isRecruit(m) && !d.recIds[c.id]) { d.recIds[c.id] = 1; d.rec++; }
+      if (m.type === 'presentation' || (m.tags || []).includes('P')) d.pres++;
       if (m.outcome === 'closed' || m.type === 'closing') d.closed++;
     }); });
     return days;
@@ -137,39 +168,56 @@
   function weekStats(days, today) {
     const dow = (new Date(today + 'T00:00:00Z').getUTCDay() + 6) % 7;   // Monday = 0
     const start = addDays(today, -dow);
-    let met = 0, hit = 0, pres = 0, closed = 0;
-    for (let i = 0; i <= dow; i++) { const s = days[addDays(start, i)]; if (s) { met += s.met; pres += s.pres; closed += s.closed; if (s.met >= TARGET) hit++; } }
-    return {start, met, hit, pres, closed, daysSoFar: dow + 1};
+    let met = 0, hit = 0, pres = 0, closed = 0, rec = 0;
+    for (let i = 0; i <= dow; i++) { const s = days[addDays(start, i)]; if (s) { met += s.met; pres += s.pres; closed += s.closed; rec += s.rec || 0; if (s.met >= TARGET) hit++; } }
+    return {start, met, hit, pres, closed, rec, daysSoFar: dow + 1};
   }
-  const TYPE_ZH = {fact_find: '了解需求', presentation: 'Proposal 讲解', follow_up: 'Follow up', closing: '成交', service: '服务', other: '见面'};
-  const short = (s, n) => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
+  function monthStats(days, today) {
+    let met = 0, rec = 0;
+    Object.keys(days).forEach(d => { if (d.slice(0, 7) === today.slice(0, 7) && d <= today) { met += days[d].met; rec += days[d].rec || 0; } });
+    return {met, rec};
+  }
+  /* "09:00" -> "9am", "13:30" -> "1:30pm" */
+  function timeLabel(t) {
+    const m = String(t || '').match(/^(\d{1,2}):(\d{2})$/); if (!m) return '';
+    const h = +m[1], ap = h < 12 ? 'am' : 'pm', h12 = h % 12 || 12;
+    return h12 + (m[2] === '00' ? '' : ':' + m[2]) + ap;
+  }
+  const ORD = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
+  const ordinal = i => '第' + (ORD[i] || String(i + 1)) + '访';
+  const WEEKDAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const pad2 = n => String(n).padStart(2, '0');
+  /* REDEFINE 三访 report, in the team's format:
+     o: {date, reportName, base, opening, items: [{name, time, tags, note}], week: {met, rec}, month: {met}, targets, reflection, tomorrow, hideNames} */
   function reportText(o) {
-    // o: {date, agentName, items: [{name, type, nextStep, outcome, sentPdf}], reflection, tomorrow, streak, week, hideNames, lang}
-    const en = o.lang === 'en', dd = o.date.slice(8, 10) + '/' + o.date.slice(5, 7);
-    const met = new Set(o.items.map(i => i.key || i.name)).size;
-    const lines = [(en ? '📋 3-Visit Report ' : '📋 三访报告 ') + dd + (o.agentName ? ' · ' + o.agentName : ''),
-      (met >= TARGET ? '✅ ' : '⏳ ') + (en ? 'Met today: ' : '今日见面：') + met + '/' + TARGET, ''];
+    const T = Object.assign({}, TARGETS, o.targets || {}), [y, mo, d] = o.date.split('-');
+    const wd = WEEKDAY[new Date(o.date + 'T00:00:00Z').getUTCDay()];
+    const head = (o.reportName || o.agentName || '') + (o.base ? ' (' + o.base + ')' : '');
+    const lines = [];
+    if (head.trim()) lines.push(head.trim());
+    lines.push(o.opening == null ? '以愉快的心情与大家一起修练三访。' : o.opening);
+    lines.push('', `${d}/${mo}/${y} (${wd})`, '');
+    const w = o.week || {met: 0, rec: 0}, m = o.month || {met: 0};
+    lines.push(`V: ${pad2(w.met)}/${pad2(T.week)}`, `R: ${pad2(w.rec || 0)}/${pad2(T.recruit)}`, `Total: ${pad2(m.met)}/${pad2(T.month)}`);
     o.items.forEach((it, i) => {
-      const who = o.hideNames ? (en ? 'Client ' : '客户 ') + String.fromCharCode(65 + i) : it.name;
-      const closed = it.outcome === 'closed' || it.type === 'closing';
-      const bits = closed && it.type === 'closing' ? [] : [en ? typeLabel(it.type) : TYPE_ZH[it.type] || '见面'];
-      if (closed) bits.push(en ? 'closed 🎉' : '成交 🎉');
-      else {
-        if (it.sentPdf) bits.push(en ? 'follow-up PDF sent' : '已 send PDF');
-        if (it.nextStep) bits.push(short(it.nextStep, 32));
-      }
-      lines.push(`${i + 1}. ${who} — ${bits.join(en ? ', ' : '，')}`);
+      const tags = (it.tags || []).length ? ' (' + it.tags.join(',') + ')' : '';
+      const time = timeLabel(it.time);
+      lines.push('', `${ordinal(i)}${time ? ' ' + time : ''}${tags}`, o.hideNames ? 'Client ' + String.fromCharCode(65 + i) : it.name);
+      if (it.note) lines.push(it.note.trim());
     });
-    if (!o.items.length) lines.push(en ? '(no meetings recorded)' : '（今天没有记录见面）');
-    lines.push('');
-    if (o.reflection) lines.push((en ? '💡 Reflection: ' : '💡 今日反思：') + o.reflection.trim());
-    if (o.tomorrow) lines.push((en ? '🎯 Tomorrow: ' : '🎯 明天目标：') + o.tomorrow.trim());
-    const w = o.week;
-    if (o.streak || (w && w.met)) lines.push((o.streak ? (en ? `🔥 ${o.streak} day${o.streak > 1 ? 's' : ''} in a row at 3+` : `🔥 连续 ${o.streak} 天达标`) : '') + (o.streak && w ? ' · ' : '') + (w ? (en ? `This week: ${w.met} visits` : `本周 ${w.met} 访`) : ''));
-    return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    if (!o.items.length) lines.push('', '(今天还没有记录见面)');
+    if (o.reflection) lines.push('', '💡 ' + o.reflection.trim());
+    if (o.tomorrow) lines.push('🎯 ' + o.tomorrow.trim());
+    return lines.join('\n').trim();
+  }
+  /* one meeting -> the line under its name in the report */
+  function noteFor(m) {
+    if (m.reportNote) return m.reportNote;
+    const bits = [m.summary && m.summary !== 'Quick log' ? m.summary : '', m.nextStep ? (/^next/i.test(m.nextStep) ? m.nextStep : 'Next: ' + m.nextStep) : ''].filter(Boolean);
+    return bits.join(' ');
   }
 
-  const api = {TARGET, meetingsOn, dayStats, streak, weekStats, reportText, addDays,
+  const api = {TARGET, TARGETS, QUESTIONS, TAGS, tagsFor, meetingsOn, dayStats, streak, weekStats, monthStats, timeLabel, noteFor, reportText, addDays,
     MEETING_TYPES, LANGS, HINT, hintFor, buildPrompt, normalizeDraft, scrub, matchClient, applyToFarm, brief, typeLabel};
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FU = api;
 })(this);

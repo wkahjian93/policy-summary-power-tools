@@ -200,3 +200,15 @@ table.team th:first-child,table.team td:first-child{text-align:left}
 table.team td{text-align:right;padding:8px 4px;border-bottom:1px solid var(--line)}
 table.team td span{display:block;font-size:11px;color:var(--muted)}
 table.team td.ok{color:var(--ok);font-weight:700}
+.guide ol{margin:8px 0 0;padding-left:22px;font-size:14px}
+.guide li{margin-bottom:6px}
+.guide li span{display:block;font-size:12px;color:var(--muted)}
+.qa{margin-top:6px;border-top:1px solid var(--line);padding-top:8px}
+.qa summary{cursor:pointer;margin-bottom:8px}
+.tagrow{display:flex;gap:6px;min-height:44px;align-items:center}
+.tagrow .chip{min-width:44px;font-weight:700}
+.tl-qa{margin-top:4px;font-size:12.5px}
+.tl-qa summary{color:var(--navy);cursor:pointer}
+.tl-qa p{margin:4px 0 0}
+.tl-qa b{color:var(--muted);font-weight:600}
+button.item{font:inherit;color:inherit}

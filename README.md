@@ -19,15 +19,37 @@ Every client has a farm card: a **Before you meet** brief (last meeting, family 
 
 ## Daily 三访 report
 
-The home screen shows **三访 today** (people met out of 3), your run of days at 3+, and this week's visits (week starts Monday). Every recorded meeting counts automatically; the same client twice in one day counts once.
+**While recording**, the record screen shows the REDEFINE guide (11 questions: time spent, what you did, CFF priorities, which stage had an issue (Relax–Disturb–Release–Close), income and cash flow, hot button, concept, plan and ANP, objections, how you handled them, next move). You don't have to cover all of them. The AI files your answers under each question in the client's farm, and you can edit them on the review screen.
 
-1. In the evening tap **📋 Daily review & report**. Today's meetings are already listed.
-2. Met someone you didn't record? Tap **+ Add someone I met (quick log)**; it goes into their farm.
-3. Type or speak your **💡 Reflection** and **🎯 Tomorrow** (tap a box, then **🎙 Speak into the box**).
-4. Tap **Copy report for WhatsApp** and paste it in the group. Tick **Hide client names** to show Client A, B, C instead.
-5. If **Share my numbers with my leader** is on (default), only the counts (met, presentations, closed) go to the team server. No client names.
+**Each visit** also gets a time, P / O / R tags (P = presentation, O = opening, R = recruit) and a short report note that the group sees. The AI suggests all three; tap a visit in the daily report to change them.
 
-Pick any past day with the date at the top. Reflections sync between your devices with your passphrase.
+The home screen shows **三访 today** (people met out of 3) and this week's V and R against your targets.
+
+1. In the evening tap **📋 Daily review & report**. Today's visits are listed in time order.
+2. Met someone you didn't record? Tap **+ Add someone I met (quick log)** with time, P/O/R and note.
+3. Optional: type or speak a reflection and tomorrow's plan; they are added at the end.
+4. Tap **Copy report for WhatsApp** and paste it in the group. Tick **Hide client names** to show Client A, B, C.
+
+The report follows the team format:
+
+```
+Rex👑 (SG Farlim)
+以愉快的心情与大家一起修练三访。
+
+13/11/2026 (Friday)
+
+V: 06/18      visits this week / weekly target
+R: 03/06      recruit visits this week / weekly target
+Total: 24/72  visits this month / monthly target
+
+第一访 9am (P)
+Ms Koay
+Direct approach, …
+```
+
+Set your report name, base, opening line and the three targets in Settings → 👤 My profile. Defaults: V 18 a week, R 6 a week, Total 72 a month.
+
+If **Share my numbers with my leader** is on (default), only the counts go to the team server. No client names.
 
 **Leader view:** signed in with the owner code, the home card shows **👥 Team 三访**: each agent's today, this week, days at 3+, streak and closes.
 
@@ -85,7 +107,7 @@ Clients are locked with your passphrase before they leave the device. The server
 ## For maintenance
 
 - `docs/` is the app. `logic.js` handles recognition and calculations, `report.js` builds the PDF pages, `app.js` runs the screens, and `config.js` holds the server address.
-- `node test.js` runs 93 checks covering recognition, messy numbers, the never-guess rules and the summary maths.
+- `node test.js` runs 98 checks covering recognition, messy numbers, the never-guess rules and the summary maths.
 - `node serve.js` previews the app at http://localhost:5193.
 - `samples/` holds the sample PDF made by the app.
 - `node test-sync-server.js` runs the real team server code in memory on port 5194 to test sync (open localhost:5194 and 127.0.0.1:5194 as two devices; team code `test-team-code`).

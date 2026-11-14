@@ -146,12 +146,58 @@ console.log('三访 report');
   eq('streak not broken while today is still in progress', FU.streak(days, '2026-11-14'), 2);
   const w = FU.weekStats(days, '2026-11-13');   // Fri; week starts Mon 9 Nov
   eq('week from Monday: 7 visits, 2 days at 3+', [w.start, w.met, w.hit], ['2026-11-09', 7, 2]);
-  const items = FU.meetingsOn(cases, '2026-11-13').map(({c, m}) => ({key: c.id, name: c.client.name, type: m.type, nextStep: m.nextStep, outcome: m.outcome, sentPdf: m.sentPdf}));
-  const txt = FU.reportText({date: '2026-11-13', agentName: 'Ali', items, reflection: '今天讲 concept 比较顺', tomorrow: '见 3 个新朋友', streak: 2, week: w});
-  eq('report header and count', txt.split('\n').slice(0, 2), ['📋 三访报告 13/11 · Ali', '✅ 今日见面：3/3']);
-  eq('report lines', txt.split('\n').slice(3, 6), ['1. 陈先生 — Proposal 讲解，已 send PDF，下星期五 call', '2. Ah Seng — 了解需求，下次谈 medical', '3. 李太太 — 成交 🎉']);
-  eq('report footer', txt.split('\n').slice(-3), ['💡 今日反思：今天讲 concept 比较顺', '🎯 明天目标：见 3 个新朋友', '🔥 连续 2 天达标 · 本周 7 访']);
-  eq('hide names uses Client A/B/C', /客户 A/.test(FU.reportText({date: '2026-11-13', items, hideNames: true})) && !/陈先生/.test(FU.reportText({date: '2026-11-13', items, hideNames: true})), true);
+  eq('recruit visits counted per day', FU.dayStats([{id: 'x', client: {name: 'x'}, meetings: [{date: '2026-11-13', type: 'fact_find', tags: ['O', 'R']}]}])['2026-11-13'].rec, 1);
+  eq('time labels', ['09:00', '13:30', '12:00', '00:15'].map(FU.timeLabel), ['9am', '1:30pm', '12pm', '12:15am']);
+  /* the team's own example report, rebuilt from data */
+  const rex = [
+    ['09:00', ['P'], 'Ms Koay', 'Direct approach, simple survey done got holding one P company medical card, proposed GCCR for her and claimed will consider. Will follow up.'],
+    ['10:00', ['P'], 'Ah Ming', 'Direct approach, holding p company medical card also, proposed him GCCR. Will consider and follow up again.'],
+    ['11:00', ['O', 'R'], 'Jia Yi', 'Direct approach, just graduated from secondary school but started working already have a strong push factor she don’t want 靠家里人。 Add contact and will send CFG test for her.'],
+    ['12:00', ['O', 'R'], 'Tong Xuan', 'Direct approach, Jia Yi is her friend, have same thought also. Added contact and will send CFG test for her.'],
+    ['13:00', ['O'], 'Ajax', 'Direct approach, he subscribed a financial app called kaotim? And he bought something like PA. Open him for review and do CFF.'],
+    ['14:00', ['O'], 'Sim Guo Liang', 'Direct approach, open for present income protection and will meet up at KL next month.']
+  ].map(([time, tags, name, note]) => ({time, tags, name, note}));
+  const want = `Rex👑 (SG Farlim)
+以愉快的心情与大家一起修练三访。
+
+13/11/2026 (Friday)
+
+V: 06/18
+R: 03/06
+Total: 24/18
+
+第一访 9am (P)
+Ms Koay
+${rex[0].note}
+
+第二访 10am (P)
+Ah Ming
+${rex[1].note}
+
+第三访 11am (O,R)
+Jia Yi
+${rex[2].note}
+
+第四访 12pm (O,R)
+Tong Xuan
+${rex[3].note}
+
+第五访 1pm (O)
+Ajax
+${rex[4].note}
+
+第六访 2pm (O)
+Sim Guo Liang
+${rex[5].note}`;
+  const got = FU.reportText({date: '2026-11-13', reportName: 'Rex👑', base: 'SG Farlim', items: rex, week: {met: 6, rec: 3}, month: {met: 24}, targets: {week: 18, recruit: 6, month: 18}});
+  eq('report matches the team format exactly', got, want);
+  eq('hide names uses Client A, B…', /\nClient A\n/.test(FU.reportText({date: '2026-11-13', items: rex, hideNames: true})) && !/Ms Koay/.test(FU.reportText({date: '2026-11-13', items: rex, hideNames: true})), true);
+  eq('default targets 18 / 6 / 72', FU.reportText({date: '2026-11-13', items: [], week: {met: 2, rec: 0}, month: {met: 9}}).split('\n').slice(4, 7), ['V: 02/18', 'R: 00/06', 'Total: 09/72']);
+  eq('11 guide questions in the AI instructions', FU.QUESTIONS.length === 11 && FU.QUESTIONS.every(q => FU.buildPrompt({transcript: 'x', concepts: [], date: '2026-11-13'}).includes(q.k + ' = ')), true);
+  const dq = FU.normalizeDraft({meeting: {type: 'fact_find'}, qa: {duration: '45 min', plan: 'Income protection, ANP RM4,200', next: 'Meet KL next month', made: 'x'}, tags: ['o', 'r', 'Z'], time: '9:05', reportNote: 'Direct approach. IC 900101-07-1234'}, []);
+  eq('qa answers kept, unknown keys dropped', [dq.qa.duration, dq.qa.plan, dq.qa.cff, 'made' in dq.qa], ['45 min', 'Income protection, ANP RM4,200', '', false]);
+  eq('tags cleaned, time padded, IC scrubbed from report note', [dq.tags, dq.time, /900101/.test(dq.reportNote)], [['O', 'R'], '09:05', false]);
+  eq('no tags from AI -> from meeting type', FU.normalizeDraft({meeting: {type: 'presentation'}}, []).tags, ['P']);
 }
 
 console.log('Summary maths (sample client)');

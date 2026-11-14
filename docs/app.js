@@ -748,11 +748,13 @@
     app.innerHTML = bar('Record a meeting', back, rec.transcript ? discard : '') + `<div class="wrap">${stepBar}
       ${c ? '' : `<div class="card"><h2>Which client?</h2><div class="f"><select id="pickC"><option value="">New client (the app takes the name from what you say)</option>${cases.filter(x => !x.sample).sort((a, b) => (b.updated || '').localeCompare(a.updated || '')).map(x => `<option value="${x.id}">${esc(x.client.name)}${x.client.nickname ? ' (' + esc(x.client.nickname) + ')' : ''}</option>`).join('')}</select></div></div>`}
       <div class="card mic-card">
-        <p class="muted">Tell it like you'd tell your leader: who you met, what they care about, what you explained, what you suggested, and the next step. Mix Mandarin, Hokkien, Cantonese, English and Malay freely.</p>
+        <p class="muted">Tell it like you'd tell your leader. Mix Mandarin, Hokkien, Cantonese, English and Malay freely.</p>
         <button class="mic" id="mic" aria-label="Start recording"><span></span></button>
         <div class="mic-time" id="micT">Tap to record · up to 5 min</div>
         ${rec.transcript ? `<p class="muted" style="margin-top:8px">${rec.transcript.length} characters recorded so far. Recording again adds to it.</p>` : ''}
       </div>
+      <details class="card guide" ${load('pspt.guideClosed', false) ? '' : 'open'} id="guideQ"><summary><b>Guide: what to cover</b> <span class="muted">(no need to follow all)</span></summary>
+        <ol>${FU.QUESTIONS.map(q => `<li>${esc(q.zh)}<span>${esc(q.en)}</span></li>`).join('')}</ol></details>
       <details class="card"><summary><b>Type instead</b> <span class="muted">(or use your keyboard's mic)</span></summary>
         <div class="f" style="margin-top:8px"><textarea id="typed" rows="6" placeholder="今天见陈先生, 35岁, 两个孩子, 担心 medical 不够……"></textarea></div>
         <button class="btn sm" id="useTyped">Use this text</button></details>
@@ -762,6 +764,7 @@
     wireCommon(c);
     const pick = $('#pickC'); if (pick) pick.onchange = () => { if (pick.value) { const id = pick.value; rec.caseId = id; saveRec(); location.hash = '#/record/' + id; } };
     $('#mic').onclick = () => (mediaRec ? stopMic() : startMic(c));
+    $('#guideQ').addEventListener('toggle', e => save('pspt.guideClosed', !e.target.open));
     $('#useTyped').onclick = () => { const t = $('#typed').value.trim(); if (!t) return; rec.transcript = (rec.transcript ? rec.transcript + '\n' : '') + t; rec.step = 'transcript'; saveRec(); route(); };
     const tt = $('#toTx'); if (tt) tt.onclick = () => { rec.step = 'transcript'; saveRec(); route(); };
   }
@@ -860,6 +863,9 @@
   /* ---------- review & send ---------- */
   function reviewScreen(c, back, stepBar, discard) {
     const d = rec.draft, L = d.letter;
+    /* drafts saved before the guide existed, and a sensible default time (when recording started) */
+    d.qa = d.qa || {}; d.tags = d.tags && d.tags.length ? d.tags : FU.tagsFor(d.meeting.type); d.reportNote = d.reportNote || '';
+    if (!d.time) { const t = new Date(rec.started || Date.now()); d.time = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0'); }
     const ta = (id, v, rows) => `<textarea id="${id}" rows="${rows || 3}">${esc(v)}</textarea>`;
     const unchecked = d.numbers.filter(n => !n.ok).length;
     app.innerHTML = bar('Review & send', back, discard) + `<div class="wrap">${stepBar}
@@ -892,6 +898,14 @@
         <div class="f"><label>Summary</label>${ta('mSum', d.meeting.summary, 3)}</div>
         <div class="f"><label>Next step</label><input id="mNext" value="${esc(d.meeting.nextStep)}"></div>
         <div class="f"><label>Result</label><select id="mOut">${[['considering', 'Considering'], ['closed', 'Closed 🎉'], ['not_interested', 'Not interested'], ['none', 'No decision yet']].map(([v, l]) => `<option value="${v}" ${d.meeting.outcome === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+        <details class="qa" open><summary><b>Guide answers</b> <span class="muted">(filled from what you said; edit or leave blank)</span></summary>
+          ${FU.QUESTIONS.map((q, i) => `<div class="f"><label>${i + 1}. ${esc(q.zh)}</label><input data-qa="${q.k}" value="${esc(d.qa[q.k] || '')}"></div>`).join('')}</details>
+      </div>
+      <div class="card"><h2>For today's 三访 report</h2>
+        <div class="grid2"><div class="f"><label>Time</label><input id="mTime" type="time" value="${esc(d.time)}"></div>
+        <div class="f"><label>Type</label><div class="tagrow">${FU.TAGS.map(t => `<button type="button" class="chip" data-tag="${t}" aria-pressed="${d.tags.includes(t)}">${t}</button>`).join('')}</div></div></div>
+        <p class="muted" style="margin:-4px 0 8px">P = presentation · O = opening · R = recruit</p>
+        <div class="f"><label>Report note (what the group sees)</label>${ta('mNote', d.reportNote, 3)}</div>
       </div>
     </div>
     <div class="dock"><button class="btn" id="saveOnly">Save only</button><button class="btn primary" id="mkFU" ${unchecked ? 'disabled' : ''}>${unchecked ? `Check ${unchecked} number${unchecked > 1 ? 's' : ''}` : 'Create PDF & send'}</button></div>`;
@@ -907,6 +921,10 @@
     $('#mType').onchange = e => { d.meeting.type = e.target.value; saveRec(); };
     $('#mDate').onchange = e => { d.meeting.followUpDate = e.target.value; saveRec(); };
     $('#mOut').onchange = e => { d.meeting.outcome = e.target.value; saveRec(); };
+    $$('[data-qa]').forEach(inp => inp.addEventListener('input', () => { d.qa[inp.dataset.qa] = inp.value; saveRec(); }));
+    $('#mTime').onchange = e => { d.time = e.target.value; saveRec(); };
+    bind('mNote', v => d.reportNote = v);
+    $$('[data-tag]').forEach(b => b.onclick = () => { const t = b.dataset.tag, i = d.tags.indexOf(t); if (i >= 0) d.tags.splice(i, 1); else d.tags.push(t); d.tags.sort((x, y) => FU.TAGS.indexOf(x) - FU.TAGS.indexOf(y)); b.setAttribute('aria-pressed', i < 0); saveRec(); });
     const who = $('#cWho'); if (who) who.onchange = () => { rec.matchId = who.value; saveRec(); };
     $$('[data-n]').forEach(b => b.onchange = () => { d.numbers[+b.dataset.n].ok = b.checked; saveRec(); const left = d.numbers.filter(n => !n.ok).length;
       const mk = $('#mkFU'); mk.disabled = !!left; mk.textContent = left ? `Check ${left} number${left > 1 ? 's' : ''}` : 'Create PDF & send'; $('.numcheck h2').textContent = `Numbers to check (${left} left)`; });
@@ -977,6 +995,13 @@
       <div class="f"><label for="pI">About me (2–4 sentences)</label><textarea id="pI" rows="3">${esc(settings.intro || '')}</textarea></div>
       <div class="f"><label for="pW">Why I do insurance</label><textarea id="pW" rows="3">${esc(settings.why || '')}</textarea></div>
       <div class="f"><label for="pB">Background / achievements (optional)</label><textarea id="pB" rows="2">${esc(settings.background || '')}</textarea></div>
+      <h3 style="font-size:15px;margin:14px 0 6px">三访 report</h3>
+      <div class="grid2"><div class="f"><label for="pRN">Name in report</label><input id="pRN" value="${esc(settings.reportName || '')}" placeholder="e.g. Rex👑"></div>
+      <div class="f"><label for="pBase">Base</label><input id="pBase" value="${esc(settings.base || '')}" placeholder="e.g. SG Farlim"></div></div>
+      <div class="f"><label for="pOpen">Opening line</label><input id="pOpen" value="${esc(settings.reportOpening == null ? '以愉快的心情与大家一起修练三访。' : settings.reportOpening)}"></div>
+      <div class="grid3"><div class="f"><label for="pTW">V target / week</label><input id="pTW" inputmode="numeric" value="${(settings.targets || FU.TARGETS).week}"></div>
+      <div class="f"><label for="pTR">R target / week</label><input id="pTR" inputmode="numeric" value="${(settings.targets || FU.TARGETS).recruit}"></div></div>
+      <div class="f"><label for="pTM">Total target / month</label><input id="pTM" inputmode="numeric" value="${(settings.targets || FU.TARGETS).month}"></div>
       <div class="f"><label>Usual letter language</label><select id="pL">${[['zh', '中文'], ['en', 'English'], ['ms', 'Bahasa Melayu']].map(([k, l]) => `<option value="${k}" ${(settings.fuLang || 'zh') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <div class="row"><button class="btn" data-close>Cancel</button><button class="btn primary" id="pSave">Save</button></div>`);
     let photo = settings.photo || '';
@@ -984,7 +1009,9 @@
     $('#pIn', el).onchange = async e => { const f = e.target.files[0]; if (!f) return; try { photo = 'data:image/jpeg;base64,' + await toJpegB64(f, 420); $('#pPhoto', el).src = photo; } catch (er) { toast('Could not open that photo.'); } };
     $('#pSave', el).onclick = () => {
       Object.assign(settings, {name: $('#pN', el).value.trim(), title: $('#pT', el).value.trim(), phone: $('#pP', el).value.trim(), email: $('#pE', el).value.trim(),
-        intro: $('#pI', el).value.trim(), why: $('#pW', el).value.trim(), background: $('#pB', el).value.trim(), fuLang: $('#pL', el).value, photo});
+        intro: $('#pI', el).value.trim(), why: $('#pW', el).value.trim(), background: $('#pB', el).value.trim(), fuLang: $('#pL', el).value, photo,
+        reportName: $('#pRN', el).value.trim(), base: $('#pBase', el).value.trim(), reportOpening: $('#pOpen', el).value.trim(),
+        targets: {week: +$('#pTW', el).value || FU.TARGETS.week, recruit: +$('#pTR', el).value || FU.TARGETS.recruit, month: +$('#pTM', el).value || FU.TARGETS.month}});
       save('pspt.settings', settings); closeSheet(); toast('Profile saved'); route();
     };
   }
@@ -996,7 +1023,11 @@
     return `<div class="card farm"><div class="farm-h"><h2>Client farm</h2><button class="btn sm" id="editT">Edit details</button></div>
       ${ms.length ? `<div class="brief"><b>Before you meet</b>${b.map(x => `<p>${esc(x)}</p>`).join('')}</div>` : '<p class="muted">No meetings yet. After you meet, tap <b>Record a meeting</b>; it is saved here.</p>'}
       <button class="btn primary block" id="recC" style="margin:10px 0">🎙 Record a meeting</button>
-      ${ms.length ? `<ol class="timeline">${ms.map(m => `<li><span class="tl-d">${esc(m.date)}</span><b>${esc(FU.typeLabel(m.type))}${m.outcome === 'closed' ? ' 🎉' : ''}${m.sentPdf ? ' · PDF sent' : ''}</b><p>${esc(m.summary)}</p>${m.nextStep ? `<p class="tl-n">Next: ${esc(m.nextStep)}${m.followUpDate ? ' · ' + esc(m.followUpDate) : ''}</p>` : ''}<button class="tinylink tl-del" data-m="${m.id}">delete</button></li>`).join('')}</ol>` : ''}
+      ${ms.length ? `<ol class="timeline">${ms.map(m => {
+        const qa = FU.QUESTIONS.filter(q => m.qa && m.qa[q.k]);
+        return `<li><span class="tl-d">${esc(m.date)}${m.time ? ' · ' + esc(FU.timeLabel(m.time)) : ''}${(m.tags || []).length ? ' · ' + esc(m.tags.join(',')) : ''}</span><b>${esc(FU.typeLabel(m.type))}${m.outcome === 'closed' ? ' 🎉' : ''}${m.sentPdf ? ' · PDF sent' : ''}</b><p>${esc(m.summary)}</p>${m.nextStep ? `<p class="tl-n">Next: ${esc(m.nextStep)}${m.followUpDate ? ' · ' + esc(m.followUpDate) : ''}</p>` : ''}
+          ${qa.length ? `<details class="tl-qa"><summary>Guide answers (${qa.length})</summary>${qa.map(q => `<p><b>${esc(q.zh)}</b> ${esc(m.qa[q.k])}</p>`).join('')}</details>` : ''}<button class="tinylink tl-del" data-m="${m.id}">delete</button></li>`;
+      }).join('')}</ol>` : ''}
       ${(t.family || t.work || (t.cares || []).length || (t.objections || []).length) ? `<div class="traits">${t.family ? `<p><b>Family</b> ${esc(t.family)}</p>` : ''}${t.work ? `<p><b>Work</b> ${esc(t.work)}</p>` : ''}${t.personality ? `<p><b>Personality</b> ${esc(t.personality)}</p>` : ''}${(t.cares || []).length ? `<p><b>Cares about</b> ${esc(t.cares.join(', '))}</p>` : ''}${(t.objections || []).length ? `<p><b>Concerns</b> ${esc(t.objections.join(', '))}</p>` : ''}</div>` : ''}
     </div>`;
   }
@@ -1040,7 +1071,7 @@
     const days = FU.dayStats(cases), t = todayISO(), d = days[t] || {met: 0}, st = FU.streak(days, t), w = FU.weekStats(days, t);
     return `<div class="card sanfang"><div class="sf-top"><div><h2>三访 today</h2><b class="sf-n">${d.met}<small>/3</small></b></div>
       <div class="sf-dots">${[0, 1, 2].map(i => `<i class="${d.met > i ? 'on' : ''}"></i>`).join('')}</div></div>
-      <p class="muted">${st ? `🔥 ${st} day${st > 1 ? 's' : ''} in a row · ` : ''}This week ${w.met} visit${w.met === 1 ? '' : 's'} · ${w.hit} day${w.hit === 1 ? '' : 's'} at 3+</p>
+      <p class="muted">This week V ${w.met}/${(settings.targets || FU.TARGETS).week} · R ${w.rec}/${(settings.targets || FU.TARGETS).recruit}${st ? ` · 🔥 ${st} day${st > 1 ? 's' : ''} in a row` : ''}</p>
       <button class="btn block" id="dayRev">📋 ${reports[t] && reports[t].done ? 'Edit today\'s report' : 'Daily review & report'}</button>
       ${(session() || {}).owner ? '<button class="btn block" id="teamV" style="margin-top:8px">👥 Team 三访 (leader view)</button>' : ''}</div>`;
   }
@@ -1053,20 +1084,21 @@
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) date = todayISO();
     const r = reports[date] || {reflection: '', tomorrow: '', hideNames: false};
     const items = FU.meetingsOn(cases, date);
-    const days = FU.dayStats(cases), w = FU.weekStats(days, date), st = FU.streak(days, date);
-    const lang = settings.reportLang || 'zh', metN = new Set(items.map(x => x.c.id)).size;
-    const text = () => FU.reportText({date, agentName: settings.name, lang, hideNames: r.hideNames, streak: st, week: w, reflection: r.reflection, tomorrow: r.tomorrow,
-      items: items.map(({c, m}) => ({key: c.id, name: c.client.name, type: m.type, nextStep: m.nextStep, outcome: m.outcome, sentPdf: m.sentPdf}))});
+    const days = FU.dayStats(cases), w = FU.weekStats(days, date), mo = FU.monthStats(days, date);
+    const metN = new Set(items.map(x => x.c.id)).size;
+    const text = () => FU.reportText({date, agentName: settings.name, reportName: settings.reportName, base: settings.base, opening: settings.reportOpening,
+      targets: settings.targets, hideNames: r.hideNames, week: w, month: mo, reflection: r.reflection, tomorrow: r.tomorrow,
+      items: items.map(({c, m}) => ({name: c.client.name, time: m.time, tags: m.tags && m.tags.length ? m.tags : FU.tagsFor(m.type), note: FU.noteFor(m)}))});
     const touch = () => { r.updated = new Date().toISOString(); reports[date] = r; saveReports(); $('#rTxt').textContent = text(); };
     app.innerHTML = bar('三访 report', '#/', `<input type="date" id="dPick" class="datepick" value="${date}" max="${todayISO()}" aria-label="Pick a day">`) + `<div class="wrap">
       <div class="card"><h2>Met on ${esc(date)} (${metN}/3)</h2>
-        ${items.length ? items.map(({c, m}) => `<a class="item" href="#/case/${c.id}"><div class="t"><b>${esc(c.client.name)}</b><span>${esc(FU.typeLabel(m.type))}${m.nextStep ? ' · ' + esc(m.nextStep) : ''}</span></div><div class="amt">${m.outcome === 'closed' || m.type === 'closing' ? '🎉' : m.sentPdf ? 'PDF' : ''}</div></a>`).join('') : '<p class="muted">No meetings recorded for this day yet.</p>'}
+        ${items.length ? items.map(({c, m}, i) => `<button type="button" class="item" data-visit="${i}"><div class="t"><b>${esc(c.client.name)}</b><span>${esc(FU.timeLabel(m.time) || 'time?')} · ${esc((m.tags && m.tags.length ? m.tags : FU.tagsFor(m.type)).join(','))} · ${esc(FU.typeLabel(m.type))}</span><span>${esc(FU.noteFor(m) || 'Tap to add a report note')}</span></div><div class="amt">${m.outcome === 'closed' || m.type === 'closing' ? '🎉' : '✎'}</div></button>`).join('') : '<p class="muted">No meetings recorded for this day yet.</p>'}
         <button class="btn block" id="quickAdd">+ Add someone I met (quick log)</button></div>
       <div class="card"><h2>💡 Reflection</h2><div class="f"><textarea id="rRef" rows="3" placeholder="What went well, what to improve…">${esc(r.reflection)}</textarea></div>
         <h2 style="margin-top:6px">🎯 Tomorrow</h2><div class="f"><textarea id="rTom" rows="2" placeholder="Who you will meet, what you will do…">${esc(r.tomorrow)}</textarea></div>
         <button class="btn sm" id="rMic">🎙 Speak into the box</button> <span class="muted" id="rMicT">Tap a box first, then speak.</span></div>
       <div class="card"><h2>Report for the WhatsApp group</h2>
-        <div class="seg" id="rLang">${[['zh', '中文'], ['en', 'English']].map(([k, l]) => `<button type="button" data-l="${k}" aria-pressed="${lang === k}">${l}</button>`).join('')}</div>
+        ${settings.reportName || settings.base ? '' : '<p class="muted" style="margin-bottom:6px">Set your report name and base (e.g. Rex👑, SG Farlim) in Settings → 👤 My profile.</p>'}
         <label class="chk"><input type="checkbox" id="rHide" ${r.hideNames ? 'checked' : ''}> Hide client names (Client A, B, C)</label>
         <pre class="rpt" id="rTxt"></pre>
         <p class="muted">Use 称呼 only. Client details stay in your farm, not in the group.</p>
@@ -1080,7 +1112,7 @@
     $('#rTom').oninput = e => { r.tomorrow = e.target.value; touch(); };
     $('#rHide').onchange = e => { r.hideNames = e.target.checked; touch(); };
     $('#rShare').onchange = e => { settings.shareTally = e.target.checked; save('pspt.settings', settings); };
-    $$('#rLang button').forEach(b => b.onclick = () => { settings.reportLang = b.dataset.l; save('pspt.settings', settings); route(); });
+    $$('[data-visit]').forEach(b => b.onclick = () => editVisit(items[+b.dataset.visit]));
     $('#dPick').onchange = e => { if (e.target.value) location.hash = '#/day/' + e.target.value; };
     $('#quickAdd').onclick = () => quickAdd(date);
     $('#rMic').onclick = () => voiceInto($('#rMic'), $('#rMicT'), txt => {
@@ -1097,16 +1129,35 @@
     };
   }
 
+  /* time, P/O/R and the line the group sees, for one visit */
+  const tagButtons = sel => `<div class="tagrow">${FU.TAGS.map(t => `<button type="button" class="chip" data-tg="${t}" aria-pressed="${sel.includes(t)}">${t}</button>`).join('')}</div>`;
+  const wireTags = (el, sel) => $$('[data-tg]', el).forEach(b => b.onclick = () => { const t = b.dataset.tg, i = sel.indexOf(t); if (i >= 0) sel.splice(i, 1); else sel.push(t); sel.sort((x, y) => FU.TAGS.indexOf(x) - FU.TAGS.indexOf(y)); b.setAttribute('aria-pressed', i < 0); });
+  function editVisit({c, m}) {
+    const tags = (m.tags && m.tags.length ? m.tags : FU.tagsFor(m.type)).slice();
+    const el = sheet(`<div class="sheet-top"><h3>${esc(c.client.name)}</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div>
+      <div class="grid2"><div class="f"><label>Time</label><input id="vTime" type="time" value="${esc(m.time || '')}"></div><div class="f"><label>P / O / R</label>${tagButtons(tags)}</div></div>
+      <div class="f"><label>Report note (what the group sees)</label><textarea id="vNote" rows="4">${esc(m.reportNote || FU.noteFor(m))}</textarea></div>
+      <p class="muted"><a href="#/case/${c.id}">Open ${esc(c.client.name)}'s farm</a></p>
+      <div class="row"><button class="btn" data-close>Cancel</button><button class="btn primary" id="vSave">Save</button></div>`);
+    wireTags(el, tags);
+    $('#vSave', el).onclick = () => { m.time = $('#vTime', el).value; m.tags = tags; m.reportNote = $('#vNote', el).value.trim(); c.updated = new Date().toISOString(); saveCases(); closeSheet(); route(); };
+  }
+
   /* quick log for someone met without a voice note */
   function quickAdd(date) {
+    const qTags = ['O'];
+    const now = new Date(), nowT = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
     const el = sheet(`<div class="sheet-top"><h3>Quick log</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div>
       <p class="muted">For someone you met but didn't record. It is saved to their farm.</p>
       <div class="f"><label>Client</label><select id="qWho"><option value="">New client…</option>${cases.filter(x => !x.sample).sort((a, b) => a.client.name.localeCompare(b.client.name)).map(x => `<option value="${x.id}">${esc(x.client.name)}${x.client.nickname ? ' (' + esc(x.client.nickname) + ')' : ''}</option>`).join('')}</select></div>
       <div class="f" id="qNewF"><label>Name (称呼)</label><input id="qName" placeholder="e.g. Ah Seng"></div>
       <div class="grid2"><div class="f"><label>Type</label><select id="qType">${FU.MEETING_TYPES.map(t => `<option value="${t.id}">${t.zh} · ${t.en}</option>`).join('')}</select></div>
       <div class="f"><label>Result</label><select id="qOut"><option value="none">No decision yet</option><option value="considering">Considering</option><option value="closed">Closed 🎉</option><option value="not_interested">Not interested</option></select></div></div>
+      <div class="grid2"><div class="f"><label>Time</label><input id="qTime" type="time" value="${date === todayISO() ? nowT : ''}"></div><div class="f"><label>P / O / R</label>${tagButtons(qTags)}</div></div>
+      <div class="f"><label>Report note (what the group sees)</label><textarea id="qNote" rows="3" placeholder="e.g. Direct approach, open for review and do CFF."></textarea></div>
       <div class="f"><label>Next step (optional)</label><input id="qNext"></div>
       <div class="row"><button class="btn" data-close>Cancel</button><button class="btn primary" id="qSave">Save</button></div>`);
+    wireTags(el, qTags);
     $('#qWho', el).onchange = e => { $('#qNewF', el).hidden = !!e.target.value; };
     $('#qSave', el).onclick = () => {
       let c = getCase($('#qWho', el).value);
@@ -1116,7 +1167,8 @@
         c = {id: PS.uid(), created: now, updated: now, client: {name, nickname: '', age: null, income: null}, guide: Object.assign({}, settings.guide), policies: [], meetings: []};
         cases.push(c);
       }
-      const d = FU.normalizeDraft({meeting: {type: $('#qType', el).value, outcome: $('#qOut', el).value, nextStep: $('#qNext', el).value, summary: 'Quick log'}}, []);
+      const d = FU.normalizeDraft({meeting: {type: $('#qType', el).value, outcome: $('#qOut', el).value, nextStep: $('#qNext', el).value, summary: 'Quick log'},
+        tags: qTags, time: $('#qTime', el).value, reportNote: $('#qNote', el).value}, []);
       FU.applyToFarm(c, d, {date});
       saveCases(); closeSheet(); toast('Logged'); route();
     };
