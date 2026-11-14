@@ -212,3 +212,6 @@ table.team td.ok{color:var(--ok);font-weight:700}
 .tl-qa p{margin:4px 0 0}
 .tl-qa b{color:var(--muted);font-weight:600}
 button.item{font:inherit;color:inherit}
+.tl-cal{display:inline-block;margin-top:4px;font-size:12.5px;font-weight:600;color:var(--navy);text-decoration:none}
+a.btn.nx{text-decoration:none}
+.farm-h .row{flex:none}

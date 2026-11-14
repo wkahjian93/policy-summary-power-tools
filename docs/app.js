@@ -51,6 +51,7 @@
   /* ---------- router ---------- */
   function route() {
     closeSheet(); leaveGuard = null;
+    if (pendingNext) { const p = pendingNext; pendingNext = null; setTimeout(() => nextSheet(p), 0); }   // after saving a meeting: offer Calendar and 定联
     const h = location.hash.replace(/^#\/?/, '').split('/');
     window.scrollTo(0, 0);
     if (h[0] === 'record') return recordScreen(h[1] && getCase(h[1]) ? h[1] : null);
@@ -959,11 +960,12 @@
       file = new File([blob], `${(d.letter.title || 'Follow-up').replace(/[^\w一-鿿 .-]+/g, '')} - ${name.replace(/[^\w一-鿿 .-]+/g, '')}.pdf`, {type: 'application/pdf'});
       window.__lastPdf = blob;
     }
-    FU.applyToFarm(target, d, {date: todayISO(), sentPdf: withPdf});
+    const savedM = FU.applyToFarm(target, d, {date: todayISO(), sentPdf: withPdf});
+    const next = {caseId: target.id, meetingId: savedM.id};
     saveCases();
     const wa = d.whatsapp, caseId = target.id;
     rec = null; recPhotos = []; saveRec();
-    if (!withPdf) { toast('Saved to ' + target.client.name + "'s farm record"); location.hash = '#/case/' + caseId; return; }
+    if (!withPdf) { pendingNext = next; if (location.hash === '#/case/' + caseId) route(); else location.hash = '#/case/' + caseId; return; }
     const url = URL.createObjectURL(blob);
     const canShare = navigator.canShare && navigator.canShare({files: [file]});
     const el = sheet(`<h3>Ready to send</h3><p><b>${esc(file.name)}</b> · ${(blob.size / 1024).toFixed(0)} KB<br>Saved to ${esc(target.client.name)}'s farm record.</p>
@@ -980,7 +982,25 @@
       try { await navigator.clipboard.writeText(wa); } catch (e) {}
       try { await navigator.share({files: [file], text: wa}); } catch (e) { if (e.name !== 'AbortError') toast('Sharing failed. Use Save / open PDF.'); }
     };
-    $('#done', el).onclick = () => { URL.revokeObjectURL(url); closeSheet(); location.hash = '#/case/' + caseId; route(); };
+    $('#done', el).onclick = () => { URL.revokeObjectURL(url); closeSheet(); pendingNext = next; if (location.hash === '#/case/' + caseId) route(); else location.hash = '#/case/' + caseId; };
+  }
+
+  /* ---------- after saving a meeting: update REDEFINE Calendar and 定联 too ---------- */
+  let pendingNext = null;
+  function nextSheet({caseId, meetingId}) {
+    const c = getCase(caseId); if (!c) return;
+    const m = (c.meetings || []).find(x => x.id === meetingId) || {};
+    const when = [m.followUpDate, m.nextStep].filter(Boolean).join(' · ');
+    sheet(`<div class="sheet-top"><h3>✅ Saved to ${esc(c.client.name)}'s farm</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div>
+      <p>Also update:</p>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${m.nextStep || m.followUpDate
+          ? `<a class="btn primary block nx" target="_blank" rel="noopener" href="${esc(FU.calendarLink(settings.calendarUrl, {name: c.client.name, nextStep: m.nextStep, followUpDate: m.followUpDate}))}">📅 Add follow-up to REDEFINE Calendar</a>
+             <p class="muted" style="margin:-4px 0 4px">Opens a new event: Follow up ${esc(c.client.name)}${when ? ' · ' + esc(when) : ''}. Check the time, then tap Add.</p>`
+          : '<p class="muted">No follow-up date or next step yet, so there is nothing for the Calendar.</p>'}
+        <a class="btn block nx" target="_blank" rel="noopener" href="${esc(FU.dinglianLink(settings.crmUrl, c.client.name))}">🤝 Update 定联: Open / Present / Close or remark</a>
+        <button class="btn ghost block" data-close>Done</button>
+      </div>`);
   }
 
   /* ---------- the agent's own profile (on every follow-up PDF) ---------- */
@@ -1020,13 +1040,13 @@
   function farmCard(c) {
     const ms = (c.meetings || []).slice().reverse(), t = c.client.traits || {};
     const b = FU.brief(c, todayISO());
-    return `<div class="card farm"><div class="farm-h"><h2>Client farm</h2><button class="btn sm" id="editT">Edit details</button></div>
+    return `<div class="card farm"><div class="farm-h"><h2>Client farm</h2><div class="row" style="flex:none;gap:6px"><a class="btn sm" target="_blank" rel="noopener" href="${esc(FU.dinglianLink(settings.crmUrl, c.client.name))}">🤝 定联</a><button class="btn sm" id="editT">Edit details</button></div></div>
       ${ms.length ? `<div class="brief"><b>Before you meet</b>${b.map(x => `<p>${esc(x)}</p>`).join('')}</div>` : '<p class="muted">No meetings yet. After you meet, tap <b>Record a meeting</b>; it is saved here.</p>'}
       <button class="btn primary block" id="recC" style="margin:10px 0">🎙 Record a meeting</button>
       ${ms.length ? `<ol class="timeline">${ms.map(m => {
         const qa = FU.QUESTIONS.filter(q => m.qa && m.qa[q.k]);
         return `<li><span class="tl-d">${esc(m.date)}${m.time ? ' · ' + esc(FU.timeLabel(m.time)) : ''}${(m.tags || []).length ? ' · ' + esc(m.tags.join(',')) : ''}</span><b>${esc(FU.typeLabel(m.type))}${m.outcome === 'closed' ? ' 🎉' : ''}${m.sentPdf ? ' · PDF sent' : ''}</b><p>${esc(m.summary)}</p>${m.nextStep ? `<p class="tl-n">Next: ${esc(m.nextStep)}${m.followUpDate ? ' · ' + esc(m.followUpDate) : ''}</p>` : ''}
-          ${qa.length ? `<details class="tl-qa"><summary>Guide answers (${qa.length})</summary>${qa.map(q => `<p><b>${esc(q.zh)}</b> ${esc(m.qa[q.k])}</p>`).join('')}</details>` : ''}<button class="tinylink tl-del" data-m="${m.id}">delete</button></li>`;
+          ${qa.length ? `<details class="tl-qa"><summary>Guide answers (${qa.length})</summary>${qa.map(q => `<p><b>${esc(q.zh)}</b> ${esc(m.qa[q.k])}</p>`).join('')}</details>` : ''}${m.nextStep || m.followUpDate ? `<a class="tl-cal" target="_blank" rel="noopener" href="${esc(FU.calendarLink(settings.calendarUrl, {name: c.client.name, nextStep: m.nextStep, followUpDate: m.followUpDate}))}">📅 Add this follow-up to REDEFINE Calendar</a>` : ''}<button class="tinylink tl-del" data-m="${m.id}">delete</button></li>`;
       }).join('')}</ol>` : ''}
       ${(t.family || t.work || (t.cares || []).length || (t.objections || []).length) ? `<div class="traits">${t.family ? `<p><b>Family</b> ${esc(t.family)}</p>` : ''}${t.work ? `<p><b>Work</b> ${esc(t.work)}</p>` : ''}${t.personality ? `<p><b>Personality</b> ${esc(t.personality)}</p>` : ''}${(t.cares || []).length ? `<p><b>Cares about</b> ${esc(t.cares.join(', '))}</p>` : ''}${(t.objections || []).length ? `<p><b>Concerns</b> ${esc(t.objections.join(', '))}</p>` : ''}</div>` : ''}
     </div>`;
@@ -1164,7 +1184,7 @@
       <div class="f"><label>Result</label><select id="qOut"><option value="none">No decision yet</option><option value="considering">Considering</option><option value="closed">Closed 🎉</option><option value="not_interested">Not interested</option></select></div></div>
       <div class="grid2"><div class="f"><label>Time</label><input id="qTime" type="time" value="${date === todayISO() ? nowT : ''}"></div><div class="f"><label>P / O / R</label>${tagButtons(qTags)}</div></div>
       <div class="f"><label>Report note (what the group sees)</label><textarea id="qNote" rows="3" placeholder="e.g. Direct approach, open for review and do CFF."></textarea></div>
-      <div class="f"><label>Next step (optional)</label><input id="qNext"></div>
+      <div class="grid2"><div class="f"><label>Next step (optional)</label><input id="qNext"></div><div class="f"><label>Follow up on</label><input id="qDate" type="date"></div></div>
       <div class="row"><button class="btn" data-close>Cancel</button><button class="btn primary" id="qSave">Save</button></div>`);
     wireTags(el, qTags);
     $('#qType', el).onchange = e => { qTags.splice(0, qTags.length, ...FU.tagsFor(e.target.value)); $$('[data-tg]', el).forEach(b => b.setAttribute('aria-pressed', qTags.includes(b.dataset.tg))); };
@@ -1177,10 +1197,10 @@
         c = {id: PS.uid(), created: now, updated: now, client: {name, nickname: '', age: null, income: null}, guide: Object.assign({}, settings.guide), policies: [], meetings: []};
         cases.push(c);
       }
-      const d = FU.normalizeDraft({meeting: {type: $('#qType', el).value, outcome: $('#qOut', el).value, nextStep: $('#qNext', el).value, summary: 'Quick log'},
+      const d = FU.normalizeDraft({meeting: {type: $('#qType', el).value, outcome: $('#qOut', el).value, nextStep: $('#qNext', el).value, followUpDate: $('#qDate', el).value, summary: 'Quick log'},
         tags: qTags, time: $('#qTime', el).value, reportNote: $('#qNote', el).value}, []);
-      FU.applyToFarm(c, d, {date});
-      saveCases(); closeSheet(); toast('Logged'); route();
+      const qm = FU.applyToFarm(c, d, {date});
+      saveCases(); closeSheet(); pendingNext = {caseId: c.id, meetingId: qm.id}; route();
     };
   }
 

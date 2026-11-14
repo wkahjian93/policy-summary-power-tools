@@ -211,6 +211,21 @@
     if (o.tomorrow) lines.push('🎯 ' + o.tomorrow.trim());
     return lines.join('\n').trim();
   }
+  /* links into the other REDEFINE apps */
+  const CAL_URL = 'https://wkahjian93.github.io/redefine-calendar/', CRM_URL = 'https://remembered.dwz-rooms-server.workers.dev/';
+  function calendarLink(base, o) {
+    // REDEFINE Calendar opens a pre-filled New event (nothing is saved until the agent taps Add)
+    const q = new URLSearchParams();
+    q.set('t', ('Follow up ' + (o.name || '') + (o.nextStep ? ': ' + short(o.nextStep, 50) : '')).trim());
+    if (/^\d{4}-\d{2}-\d{2}$/.test(o.followUpDate || '')) q.set('d', o.followUpDate);
+    if (/^\d{2}:\d{2}$/.test(o.time || '')) q.set('s', o.time);
+    if (o.nextStep) q.set('n', o.nextStep);
+    return (base || CAL_URL) + '#/new?' + q.toString();
+  }
+  // 定联 tab of the Customer Relationship App jumps to this person (or offers to add them)
+  const dinglianLink = (base, name) => (base || CRM_URL) + '#routine?find=' + encodeURIComponent(String(name || '').trim());
+  const short = (s, n) => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
+
   /* one meeting -> the line under its name in the report */
   function noteFor(m) {
     if (m.reportNote) return m.reportNote;
@@ -218,7 +233,7 @@
     return bits.join(' ');
   }
 
-  const api = {TARGET, TARGETS, QUESTIONS, TAGS, tagsFor, meetingsOn, dayStats, streak, weekStats, monthStats, timeLabel, noteFor, reportText, addDays,
+  const api = {CAL_URL, CRM_URL, calendarLink, dinglianLink, TARGET, TARGETS, QUESTIONS, TAGS, tagsFor, meetingsOn, dayStats, streak, weekStats, monthStats, timeLabel, noteFor, reportText, addDays,
     MEETING_TYPES, LANGS, HINT, hintFor, buildPrompt, normalizeDraft, scrub, matchClient, applyToFarm, brief, typeLabel};
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FU = api;
 })(this);

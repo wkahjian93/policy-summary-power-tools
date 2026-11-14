@@ -203,6 +203,18 @@ ${rex[5].note}`;
   eq('tags kept in O,F,P,R order', FU.normalizeDraft({tags: ['R', 'P', 'F']}, []).tags, ['F', 'P', 'R']);
 }
 
+console.log('Links to Calendar and 定联');
+{
+  const FU = require('./docs/followup.js');
+  const cal = new URL(FU.calendarLink('', {name: '陈先生', nextStep: 'Call after he talks to his wife', followUpDate: '2026-11-21', time: '10:30'}));
+  const q = new URLSearchParams(cal.hash.split('?')[1]);
+  eq('calendar link goes to the live Calendar New event', cal.origin + cal.pathname + cal.hash.split('?')[0], 'https://wkahjian93.github.io/redefine-calendar/#/new');
+  eq('calendar link fields survive encoding', [q.get('t'), q.get('d'), q.get('s'), q.get('n')], ['Follow up 陈先生: Call after he talks to his wife', '2026-11-21', '10:30', 'Call after he talks to his wife']);
+  eq('no date when unknown', new URLSearchParams(FU.calendarLink('x/', {name: 'A'}).split('?')[1]).has('d'), false);
+  const dl = FU.dinglianLink('', ' Ah Seng & Co ');
+  eq('定联 link finds the person by name', [dl.split('#')[0], new URLSearchParams(dl.split('#routine?')[1]).get('find')], ['https://remembered.dwz-rooms-server.workers.dev/', 'Ah Seng & Co']);
+}
+
 console.log('Summary maths (sample client)');
 const c = sampleCase(PS), s = PS.summarise(c);
 eq('death = 300k + 100k + 200k (lapsed 50k not counted)', s.cats.death.total, 600000);
