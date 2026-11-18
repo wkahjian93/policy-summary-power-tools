@@ -53,6 +53,20 @@ If **Share my numbers with my leader** is on (default), only the counts go to th
 
 **Leader view:** signed in with the owner code, the home card shows **👥 Team 三访**: each agent's today, this week, days at 3+, streak and closes.
 
+## Backup & sync (phone, iPad, laptop)
+
+Until it is on, the home screen warns: **Your clients are only on this device.** Tap **Turn on Backup & sync** once on each device, with the same name and personal passphrase.
+
+- Everything is shared: clients, policies, meetings and guide answers, 三访 notes, your profile (photo, intro, report name, base, targets) and remembered benefit names.
+- Phone, iPad and laptop can be open at the same time. Changes reach the others within about 30 seconds, and immediately when an app is reopened.
+- If two devices change the same client before syncing, both changes are kept (meetings and policies are combined, a deletion stays deleted, and for the same item the newer edit wins).
+- Deleted the app, new phone, or a new laptop: sign in, tap Turn on Backup & sync, enter the same name and passphrase, and everything comes back. Settings → Backup & sync → **Show my passphrase** shows it on any device where sync is on.
+- Everything is locked with the passphrase before it leaves the device. A forgotten passphrase cannot be recovered by REDEFINE.
+
+## AI limits
+
+AI is shared by the whole team through the team server: about 300 AI reads a day across all REDEFINE apps, reset at midnight. Each group of up to 4 pages, each voice note and each draft is 1 read; up to 40 pages per upload. The app reminds agents of this on the upload tray and the record screen.
+
 ## Policy summary
 
 **The pain:** a policy summary means gathering every policy from every insurer, working out what each one covers and adding it all up by hand. That takes hours.
@@ -107,7 +121,7 @@ Clients are locked with your passphrase before they leave the device. The server
 ## For maintenance
 
 - `docs/` is the app. `logic.js` handles recognition and calculations, `report.js` builds the PDF pages, `app.js` runs the screens, and `config.js` holds the server address.
-- `node test.js` runs 101 checks covering recognition, messy numbers, the never-guess rules and the summary maths.
+- `node test.js` runs 110 checks covering recognition, messy numbers, the never-guess rules and the summary maths.
 - `node serve.js` previews the app at http://localhost:5193.
 - `samples/` holds the sample PDF made by the app.
 - `node test-sync-server.js` runs the real team server code in memory on port 5194 to test sync (open localhost:5194 and 127.0.0.1:5194 as two devices; team code `test-team-code`).

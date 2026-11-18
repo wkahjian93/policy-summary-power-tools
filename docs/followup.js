@@ -211,6 +211,35 @@
     if (o.tomorrow) lines.push('🎯 ' + o.tomorrow.trim());
     return lines.join('\n').trim();
   }
+  /* ---------- two devices edited the same client: keep both sides' work ----------
+     Meetings and policies are joined by id (deleted ones stay deleted); for anything both changed, the newer copy wins.
+     Traits (cares, objections) are joined; family/work/personality take the newer non-empty value. */
+  function mergeCase(a, b) {
+    if (!a) return b; if (!b) return a;
+    const newer = (a.updated || '') >= (b.updated || '') ? a : b, older = newer === a ? b : a;
+    const out = JSON.parse(JSON.stringify(newer));
+    const removed = {meetings: [], policies: []};
+    for (const k of ['meetings', 'policies']) {
+      removed[k] = [...new Set([...((a.removed || {})[k] || []), ...((b.removed || {})[k] || [])])];
+      const gone = new Set(removed[k]), byId = new Map();
+      (older[k] || []).forEach(x => { if (x && x.id && !gone.has(x.id)) byId.set(x.id, x); });
+      (newer[k] || []).forEach(x => { if (x && x.id && !gone.has(x.id)) byId.set(x.id, x); });   // newer wins on the same id
+      out[k] = JSON.parse(JSON.stringify([...byId.values()]));
+    }
+    out.meetings.sort((x, y) => ((x.date || '') + (x.time || '')).localeCompare((y.date || '') + (y.time || '')));
+    out.removed = removed;
+    const tn = (newer.client && newer.client.traits) || {}, to = (older.client && older.client.traits) || {};
+    if (tn.family || to.family || (tn.cares || []).length || (to.cares || []).length) {
+      const t = out.client.traits = Object.assign({}, to, tn);
+      for (const k of ['family', 'work', 'personality']) t[k] = tn[k] || to[k] || '';
+      for (const k of ['cares', 'objections']) { const seen = new Set(), all = []; [...(to[k] || []), ...(tn[k] || [])].forEach(v => { const key = String(v).toLowerCase(); if (!seen.has(key)) { seen.add(key); all.push(v); } }); t[k] = all; }
+    }
+    if (a.created && b.created) out.created = a.created < b.created ? a.created : b.created;
+    return out;
+  }
+  /* remember a deleted meeting/policy so another device's copy doesn't bring it back */
+  function markRemoved(c, kind, id) { c.removed = c.removed || {meetings: [], policies: []}; c.removed[kind] = c.removed[kind] || []; if (!c.removed[kind].includes(id)) c.removed[kind].push(id); }
+
   /* links into the other REDEFINE apps */
   const CAL_URL = 'https://wkahjian93.github.io/redefine-calendar/', CRM_URL = 'https://remembered.dwz-rooms-server.workers.dev/';
   function calendarLink(base, o) {
@@ -233,7 +262,7 @@
     return bits.join(' ');
   }
 
-  const api = {CAL_URL, CRM_URL, calendarLink, dinglianLink, TARGET, TARGETS, QUESTIONS, TAGS, tagsFor, meetingsOn, dayStats, streak, weekStats, monthStats, timeLabel, noteFor, reportText, addDays,
+  const api = {mergeCase, markRemoved, CAL_URL, CRM_URL, calendarLink, dinglianLink, TARGET, TARGETS, QUESTIONS, TAGS, tagsFor, meetingsOn, dayStats, streak, weekStats, monthStats, timeLabel, noteFor, reportText, addDays,
     MEETING_TYPES, LANGS, HINT, hintFor, buildPrompt, normalizeDraft, scrub, matchClient, applyToFarm, brief, typeLabel};
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FU = api;
 })(this);

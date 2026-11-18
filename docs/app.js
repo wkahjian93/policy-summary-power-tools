@@ -16,6 +16,8 @@
   let tombs = load('pspt.tombs', {});   // deleted client ids -> when, so a delete reaches the other devices
   let reports = load('pspt.reports', {});   // 三访: date -> {reflection, tomorrow, hideNames, done, updated}
   const saveCases = () => { save('pspt.cases', cases); scheduleSync(); };
+  const saveSettings = () => { settings.updatedAt = new Date().toISOString(); save('pspt.settings', settings); scheduleSync(); };
+  const saveLearned = () => { save('pspt.learned', learned); save('pspt.learnedAt', new Date().toISOString()); scheduleSync(); };
   const getCase = id => cases.find(c => c.id === id);
   const agent = () => ({name: settings.name, title: settings.title, phone: settings.phone});
 
@@ -210,7 +212,7 @@
         const who = {name: $('#gName', el).value.trim(), code: $('#gCode', el).value.trim()};
         if (!who.name || !who.code) { $('#gMsg', el).textContent = 'Enter both.'; return; }
         $('[data-ok]', el).disabled = true; $('[data-ok]', el).textContent = 'Checking…';
-        try { const lr = await post({op: 'login'}, who); save('pspt.session', Object.assign(who, {owner: !!lr.owner})); if (!settings.name) { settings.name = who.name; save('pspt.settings', settings); } closeSheet(); done(true); }
+        try { const lr = await post({op: 'login'}, who); save('pspt.session', Object.assign(who, {owner: !!lr.owner})); if (!settings.name) { settings.name = who.name; save('pspt.settings', settings); }   /* not an edit: a synced profile from another device still wins */ closeSheet(); done(true); }
         catch (e) {
           $('#gMsg', el).textContent = e.code === 'unauthorized' ? 'That team code is not right.' : e.code === 'locked' ? 'Too many wrong tries. Wait 15 minutes.' : 'Could not reach the team server. Check your connection.';
           $('[data-ok]', el).disabled = false; $('[data-ok]', el).textContent = 'Sign in';
@@ -230,11 +232,14 @@
     throw {code: 'invalid_json'};
   }
   const AI_ERR = {
-    offline: 'No internet connection. Try again, or key the policy in.', daily_limit: 'The team has used today\'s AI limit. Key the policy in, or try tomorrow.',
+    offline: 'No internet connection. Try again, or key the policy in.', daily_limit: 'The team has used today\'s shared AI limit (about 300 reads across all REDEFINE apps). It resets at midnight. Meanwhile you can key in or type instead.',
     no_credit: 'The OpenAI account is out of credit. Tell Kah Jian.', bad_api_key: 'The team server key is not working. Tell Kah Jian.',
     refused: 'The AI would not read this image. Try a clearer photo or key it in.', invalid_json: 'The AI answer was unreadable. Try again with fewer photos.',
     rate_limited: 'The AI is busy. Wait a minute and try again.', image_rejected: 'One photo could not be opened. Try a screenshot or a different photo.'
   };
+
+  /* the team shares one daily AI allowance on the team server (DAILY_LIMIT, 300 by default) across all REDEFINE apps */
+  const aiLimitNote = extra => `<p class="ai-limit">🤖 <b>AI is shared by the whole team:</b> about 300 AI reads a day across all REDEFINE apps, reset at midnight. Each group of up to 4 pages, each voice note and each draft is 1 read, and there is a limit of 40 pages per upload. Please send only the pages you need, so your teammates can use AI too.${extra ? ' ' + extra : ''}</p>`;
 
   /* ---------- PDFs: each page becomes an image the AI can read ---------- */
   const loadScript = src => new Promise((ok, bad) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => bad(new Error(src)); document.head.appendChild(s); });
@@ -313,6 +318,7 @@
       </div>
       ${tray.notes.length ? `<p class="muted" style="color:var(--warn)">${esc(tray.notes.join('. '))}.</p>` : ''}
       <p class="muted">${n > MAX_PICK ? `<b style="color:var(--err)">Choose up to ${MAX_PICK} pages.</b> ` : ''}Long terms-and-conditions pages are not needed; pick schedule, benefit and statement pages. Cover IC numbers if they show.</p>
+      ${aiLimitNote(n ? `These ${n} page${n === 1 ? '' : 's'} use about ${Math.ceil(n / (CFG.maxPhotosPerRead || 4))} read${Math.ceil(n / (CFG.maxPhotosPerRead || 4)) === 1 ? '' : 's'}.` : '')}
       <div class="row" style="margin-top:10px"><button class="btn" id="tCancel">Cancel</button><button class="btn primary" id="tGo" ${!n || n > MAX_PICK ? 'disabled' : ''}>Read with AI</button></div>`);
     $('#sheet').dataset.lock = '1';   // a stray tap outside must not throw the pages away
     $$('.th', el).forEach(b => b.onclick = () => { const it = items[+b.dataset.i]; it.on = !it.on; showTray(c); });
@@ -504,7 +510,7 @@
         p.benefits = p.benefits.filter(b => b.name || b.amount != null || b.annual != null);
         /* remember categories the agent chose, so the next photo is read the same way */
         p.benefits.forEach(b => { if (b.name && b.catSet) { learned[PS.learnKey(b.name)] = b.cat; } delete b.catSet; });
-        save('pspt.learned', learned);
+        saveLearned();
         if (!p.benefits.length) p.checks.benefits = 'No benefits yet: add at least one'; else delete p.checks.benefits;
         if (isNew) c.policies.push(p); else c.policies[c.policies.indexOf(orig)] = p;
         c.updated = new Date().toISOString(); saveCases(); dirty = false;
@@ -514,7 +520,7 @@
       };
       const dp = $('#delP'); if (dp) dp.onclick = async () => {
         if (await confirmBox('Delete this policy?', esc((p.insurer || '') + ' ' + (p.productName || '')) + ' will be removed from ' + esc(c.client.name) + '\'s summary.', 'Delete', true)) {
-          c.policies = c.policies.filter(q => q.id !== pid); c.updated = new Date().toISOString(); saveCases(); dirty = false; location.hash = '#/case/' + c.id;
+          FU.markRemoved(c, 'policies', pid); c.policies = c.policies.filter(q => q.id !== pid); c.updated = new Date().toISOString(); saveCases(); dirty = false; location.hash = '#/case/' + c.id;
         }
       };
     }
@@ -617,25 +623,43 @@
         const key = await aesKey(), vault = syncCfg.vault;
         const server = (await post({op: 'psget', vault})).items || {};
         let pulled = 0; lastPulled = 0;
-        let pulledR = 0;
+        let pulledR = 0, pulledS = false;
+        const strip = x => JSON.stringify(Object.assign({}, x, {updated: 0, removed: 0}));
         for (const id of Object.keys(server)) {
+          const s = server[id];
           if (id.startsWith('r_')) {   // a day's 三访 reflection, not a client
-            const s = server[id], date = id.slice(2), loc = reports[date];
+            const date = id.slice(2), loc = reports[date];
             if (!s.d && (!loc || !loc.updated || s.u > loc.updated)) { try { reports[date] = await open(key, s); pulledR++; } catch (e) {} }
             continue;
           }
-          const s = server[id], local = getCase(id), mine = [local && local.updated, tombs[id]].filter(Boolean).sort().pop();
-          if (mine && s.u <= mine) continue;
-          if (s.d) { if (local) { cases = cases.filter(x => x.id !== id); pulled++; } tombs[id] = s.u; continue; }
-          let c; try { c = await open(key, s); } catch (e) { continue; }   // not ours / damaged: leave it
-          if (local) cases[cases.indexOf(local)] = c; else cases.push(c);
-          pulled++;
+          if (id === 'p_settings') {   // profile, report name, targets: same on every device
+            if (!settings.updatedAt || s.u > settings.updatedAt) { try { settings = Object.assign({}, settings, await open(key, s)); saveSettings(); pulledS = true; } catch (e) {} }
+            continue;
+          }
+          if (id === 'l_learned') {   // benefit names the agent taught the app
+            if (!load('pspt.learnedAt', '') || s.u > load('pspt.learnedAt', '')) { try { learned = await open(key, s); save('pspt.learned', learned); save('pspt.learnedAt', s.u); } catch (e) {} }
+            continue;
+          }
+          const local = getCase(id);
+          if (tombs[id] && s.u <= tombs[id]) continue;          // we deleted it here
+          if (local && s.u === local.updated) continue;          // nothing new
+          if (s.d) { if (local && local.updated > s.u) continue; if (local) { cases = cases.filter(x => x.id !== id); pulled++; } tombs[id] = s.u; continue; }
+          let remote; try { remote = await open(key, s); } catch (e) { continue; }   // not ours / damaged: leave it
+          if (!local) { cases.push(remote); pulled++; continue; }
+          /* both this device and another changed this client: keep both sides' work */
+          const merged = FU.mergeCase(local, remote), i = cases.indexOf(local);
+          if (strip(merged) === strip(remote)) cases[i] = remote;                    // the other copy already has everything
+          else { merged.updated = new Date().toISOString(); cases[i] = merged; }    // newer than both, so it is sent back below
+          if (strip(cases[i]) !== strip(local)) pulled++;
         }
         const push = {};
         for (const c of cases) if (!c.sample && (!server[c.id] || server[c.id].u < c.updated)) push[c.id] = Object.assign({u: c.updated}, await seal(key, c));
         for (const id of Object.keys(tombs)) if (server[id] && !server[id].d && server[id].u < tombs[id]) push[id] = {u: tombs[id], d: true};
         for (const date of Object.keys(reports)) { const r = reports[date], sid = 'r_' + date; if (r.updated && (!server[sid] || server[sid].u < r.updated)) push[sid] = Object.assign({u: r.updated}, await seal(key, r)); }
+        if (settings.updatedAt && (!server.p_settings || server.p_settings.u < settings.updatedAt)) push.p_settings = Object.assign({u: settings.updatedAt}, await seal(key, settings));
+        const la = load('pspt.learnedAt', ''); if (la && (!server.l_learned || server.l_learned.u < la)) push.l_learned = Object.assign({u: la}, await seal(key, learned));
         if (pulledR) save('pspt.reports', reports);
+        if (pulledS && !pulled) { const h = location.hash.replace(/^#\/?/, ''); if (!h) route(); }
         if (Object.keys(push).length) await post({op: 'psput', vault, items: push});
         save('pspt.tombs', tombs);
         lastPulled = pulled;
@@ -653,24 +677,27 @@
     return syncing;
   }
   function syncLine() {
-    if (!syncCfg) return '<button class="syncline" id="syncSet">☁︎ Sync off · <u>Use on iPad &amp; phone</u></button>';
+    if (!syncCfg) return `<div class="checks backup-warn"><b>⚠️ Your clients are only on this device.</b> If you delete the app, change phone, or use an iPad or laptop, they won't be there. Turn on <b>Backup &amp; sync</b> once on each device.<button class="btn primary block" id="syncSet" style="margin-top:8px">☁︎ Turn on Backup &amp; sync</button><span class="muted" style="display:block;margin-top:6px">Already use On Field on another device? Same button: enter the same name and passphrase to bring everything here.</span></div>`;
     const t = syncCfg.last ? new Date(syncCfg.last).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'}) : '';
     const msg = syncState === 'server' ? 'Sync waiting for the team server update' : syncState === 'signin' ? 'Sync paused: sign in again' : syncState === 'offline' ? 'Sync paused: no connection' : syncing ? 'Syncing…' : t ? 'Synced ' + t : 'Sync on';
     return `<button class="syncline${syncState ? ' warn' : ''}" id="syncSet">☁︎ ${esc(msg)} · ${esc(syncCfg.name)}</button>`;
   }
   function updateSyncLine() { const el = $('#syncLine'); if (el) { el.innerHTML = syncLine(); $('#syncSet').onclick = openSync; } }
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncNow(); });
-  setInterval(() => { if (document.visibilityState === 'visible') syncNow(); }, 60000);
+  setInterval(() => { if (document.visibilityState === 'visible') syncNow(); }, 30000);   // devices open at the same time catch up within about 30 s
   addEventListener('online', () => syncNow());
 
   async function openSync() {
     if (syncCfg) {
-      const el = sheet(`<div class="sheet-top"><h3>Sync my devices</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div>
-        <p>On as <b>${esc(syncCfg.name)}</b>. Clients you add or change here appear on your other devices that use the same name and sync passphrase. ${syncCfg.last ? 'Last synced ' + esc(new Date(syncCfg.last).toLocaleString('en-GB')) + '.' : ''}</p>
+      const el = sheet(`<div class="sheet-top"><h3>Backup &amp; sync</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div>
+        <p>On as <b>${esc(syncCfg.name)}</b>. Your clients, meetings, 三访 notes and profile are backed up (locked with your passphrase) and shared with every device where you turned this on: phone, iPad and laptop, even at the same time. Changes reach the others within about 30 seconds. ${syncCfg.last ? 'Last synced ' + esc(new Date(syncCfg.last).toLocaleString('en-GB')) + '.' : ''}</p>
+        <p class="muted">New phone or reinstalled the app? Sign in, tap Turn on Backup &amp; sync, and enter the same name and passphrase. Everything comes back.</p>
+        ${syncCfg.pw ? `<button class="tinylink" id="sShow" style="margin:0 0 10px">Show my passphrase</button><p class="muted" id="sPw" hidden></p>` : ''}
         ${syncState === 'server' ? '<div class="checks">The team server needs its update before sync can run. Your clients are safe on this device.</div>' : ''}
         ${syncState === 'signin' ? '<div class="checks">Sync is paused because the team sign-in was not accepted (the team code may have changed). Sign in again to continue. Your sync stays on.</div>' : ''}
         <div style="display:flex;flex-direction:column;gap:8px">${syncState === 'signin' ? '<button class="btn primary block" id="sIn">Sign in again</button>' : '<button class="btn primary block" id="sNow">Sync now</button>'}<button class="btn block" data-close>Close</button></div>
         <button class="tinylink" id="sOff">Stop syncing this device…</button>`);
+      const sw = $('#sShow', el); if (sw) sw.onclick = () => { const p = $('#sPw', el); p.hidden = !p.hidden; p.innerHTML = `Name <b>${esc(syncCfg.name)}</b> · passphrase <b>${esc(syncCfg.pw)}</b>. Use exactly these on your other devices.`; sw.textContent = p.hidden ? 'Show my passphrase' : 'Hide passphrase'; };
       const sn = $('#sNow', el); if (sn) sn.onclick = async () => { sn.textContent = 'Syncing…'; await syncNow(); closeSheet(); toast(syncState ? 'Sync could not finish' : 'Synced'); route(); };
       const si = $('#sIn', el); if (si) si.onclick = async () => { if (await signIn()) { syncState = ''; await syncNow(); toast(syncState ? 'Sync could not finish' : 'Synced'); route(); } };
       $('#sOff', el).onclick = async () => {
@@ -681,8 +708,8 @@
       return;
     }
     if (!session() && !(await signIn())) return;
-    const el = sheet(`<div class="sheet-top"><h3>Use on iPad &amp; phone</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div>
-      <p>Set a personal sync passphrase. Type the <b>same name and passphrase</b> on each of your devices and your clients will match. They are locked with your passphrase before leaving this device, so other agents and REDEFINE cannot read them.</p>
+    const el = sheet(`<div class="sheet-top"><h3>Backup &amp; sync</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div>
+      <p><b>First device:</b> choose a personal passphrase. <b>Other devices, a new phone or after reinstalling:</b> type the <b>same name and passphrase</b> and everything comes back. Your clients are locked with your passphrase before leaving this device, so other agents and REDEFINE cannot read them.</p>
       <div class="f"><label for="yName">Your name (same on every device)</label><input id="yName" autocomplete="name" value="${esc(settings.name || (session() || {}).name || '')}"></div>
       <div class="f"><label for="yPw">Sync passphrase (at least 8 characters)</label><input id="yPw" type="password" autocomplete="new-password"></div>
       <div class="f"><label for="yPw2">Type it again</label><input id="yPw2" type="password" autocomplete="new-password"></div>
@@ -697,10 +724,10 @@
       if (pw !== $('#yPw2', el).value) return (msg.textContent = 'The two passphrases are different.');
       if ((session() || {}).code === pw) return (msg.textContent = 'Use your own passphrase, not the team code.');
       $('#yGo', el).disabled = true; $('#yGo', el).textContent = 'Turning on…';
-      syncCfg = Object.assign({name}, await deriveSync(name, pw)); save('pspt.sync', syncCfg);
+      syncCfg = Object.assign({name, pw}, await deriveSync(name, pw)); save('pspt.sync', syncCfg);   // pw kept on this device only, so the agent can look it up for their next device
       await syncNow();
       closeSheet();
-      toast(syncState === 'server' ? 'Sync is set. It starts once the team server is updated.' : syncState ? 'Sync is set. It will finish when you are online.' : lastPulled ? 'Sync is on. ' + lastPulled + ' client(s) came from your other device.' : 'Sync is on. If your other device already syncs and nothing appeared, check the name and passphrase match.');
+      toast(syncState === 'server' ? 'Backup is set. It starts once the team server is updated.' : syncState ? 'Backup is set. It will finish when you are online.' : lastPulled ? 'Backup & sync is on. ' + lastPulled + ' client(s) restored from your other device.' : 'Backup & sync is on. If you used On Field before and nothing came back, check the name and passphrase are exactly the same.');
       route();
     };
   }
@@ -772,6 +799,7 @@
       </div>
       <details class="card guide" ${load('pspt.guideClosed', false) ? '' : 'open'} id="guideQ"><summary><b>Guide: what to cover</b> <span class="muted">(no need to follow all)</span></summary>
         <ol>${FU.QUESTIONS.map(q => `<li>${esc(q.zh)}<span>${esc(q.en)}</span></li>`).join('')}</ol></details>
+      ${aiLimitNote('Recording costs 1 read and the draft 1 more; typing instead skips the voice read.')}
       <details class="card"><summary><b>Type instead</b> <span class="muted">(or use your keyboard's mic)</span></summary>
         <div class="f" style="margin-top:8px"><textarea id="typed" rows="6" placeholder="今天见陈先生, 35岁, 两个孩子, 担心 medical 不够……"></textarea></div>
         <button class="btn sm" id="useTyped">Use this text</button></details>
@@ -1050,7 +1078,7 @@
         intro: $('#pI', el).value.trim(), why: $('#pW', el).value.trim(), background: $('#pB', el).value.trim(), fuLang: $('#pL', el).value, photo,
         reportName: $('#pRN', el).value.trim(), base: $('#pBase', el).value.trim(), reportOpening: $('#pOpen', el).value.trim(),
         targets: {week: +$('#pTW', el).value || FU.TARGETS.week, recruit: +$('#pTR', el).value || FU.TARGETS.recruit, month: +$('#pTM', el).value || FU.TARGETS.month}});
-      save('pspt.settings', settings); closeSheet(); toast('Profile saved'); route();
+      saveSettings(); closeSheet(); toast('Profile saved'); route();
     };
   }
 
@@ -1074,7 +1102,7 @@
     $('#editT').onclick = () => editTraits(c);
     $$('.tl-del').forEach(b => b.onclick = async () => {
       if (!(await confirmBox('Delete this meeting record?', 'It is removed from this client\'s farm on all your synced devices. A PDF already sent is not affected.', 'Delete', true))) return;
-      c.meetings = c.meetings.filter(m => m.id !== b.dataset.m); c.updated = new Date().toISOString(); saveCases(); route();
+      FU.markRemoved(c, 'meetings', b.dataset.m); c.meetings = c.meetings.filter(m => m.id !== b.dataset.m); c.updated = new Date().toISOString(); saveCases(); route();
     });
   }
   function editTraits(c) {
@@ -1158,7 +1186,7 @@
     $('#rRef').oninput = e => { r.reflection = e.target.value; touch(); };
     $('#rTom').oninput = e => { r.tomorrow = e.target.value; touch(); };
     $('#rHide').onchange = e => { r.hideNames = e.target.checked; touch(); };
-    $('#rShare').onchange = e => { settings.shareTally = e.target.checked; save('pspt.settings', settings); };
+    $('#rShare').onchange = e => { settings.shareTally = e.target.checked; saveSettings(); };
     $$('[data-visit]').forEach(b => b.onclick = () => editVisit(items[+b.dataset.visit]));
     $('#dPick').onchange = e => { if (e.target.value) location.hash = '#/day/' + e.target.value; };
     $('#quickAdd').onclick = () => quickAdd(date);
@@ -1296,14 +1324,14 @@
     $('[data-ok]', el).onclick = () => {
       Object.assign(settings, {name: $('#sN', el).value.trim(), title: $('#sT', el).value.trim(), phone: $('#sP', el).value.trim(),
         guide: {death: PS.parseAmount($('#sD', el).value).value || 10, ci: PS.parseAmount($('#sC', el).value).value || 5}});   // keeps the profile fields
-      save('pspt.settings', settings); closeSheet(); toast('Saved'); route();
+      saveSettings(); closeSheet(); toast('Saved'); route();
     };
     $('#openProf', el).onclick = openProfile;
     const o = $('#out', el); if (o) o.onclick = async () => {
       if (!(await confirmBox('Sign out of this device?', 'You will need the team code again to read photos and PDFs' + (syncCfg ? ', and sync will pause until you sign back in' : '') + '. Clients on this device stay. You normally never need to sign out.', 'Sign out', true))) return;
       localStorage.setItem('pspt.session', 'null'); toast('Signed out'); route();
     };
-    const f = $('#forget', el); if (f) f.onclick = async () => { if (await confirmBox('Forget remembered names?', 'The app will go back to its built-in reading of benefit names.', 'Forget')) { learned = {}; save('pspt.learned', learned); toast('Done'); } };
+    const f = $('#forget', el); if (f) f.onclick = async () => { if (await confirmBox('Forget remembered names?', 'The app will go back to its built-in reading of benefit names.', 'Forget')) { learned = {}; saveLearned(); toast('Done'); } };
   }
 
   route();

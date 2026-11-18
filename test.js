@@ -215,6 +215,24 @@ console.log('Links to Calendar and 定联');
   eq('定联 link finds the person by name', [dl.split('#')[0], new URLSearchParams(dl.split('#routine?')[1]).get('find')], ['https://remembered.dwz-rooms-server.workers.dev/', 'Ah Seng & Co']);
 }
 
+console.log('Phone, iPad and laptop editing the same client');
+{
+  const FU = require('./docs/followup.js');
+  const base = {id: 'c1', created: '2026-11-01T00:00:00Z', updated: '2026-11-10T00:00:00Z', client: {name: '陈先生', traits: {family: '2 kids', cares: ['medical cost'], objections: []}},
+    meetings: [{id: 'm1', date: '2026-11-10', summary: 'first'}], policies: [{id: 'p1', insurer: 'AIA'}]};
+  const phone = JSON.parse(JSON.stringify(base)), ipad = JSON.parse(JSON.stringify(base));
+  phone.meetings.push({id: 'm2', date: '2026-11-18', time: '10:00', summary: 'phone meeting'}); phone.client.traits.cares.push('kids education'); phone.updated = '2026-11-18T02:00:00Z';
+  ipad.policies.push({id: 'p2', insurer: 'Prudential'}); ipad.client.name = '陈先生 (Bayan Lepas)'; ipad.updated = '2026-11-18T02:00:30Z';
+  const m = FU.mergeCase(phone, ipad);
+  eq('meeting from phone AND policy from iPad both kept', [m.meetings.map(x => x.id), m.policies.map(x => x.id)], [['m1', 'm2'], ['p1', 'p2']]);
+  eq('newer name wins, cares joined', [m.client.name, m.client.traits.cares], ['陈先生 (Bayan Lepas)', ['medical cost', 'kids education']]);
+  eq('same result whichever device merges', JSON.stringify(FU.mergeCase(ipad, phone).meetings.map(x => x.id)) + JSON.stringify(FU.mergeCase(ipad, phone).policies.map(x => x.id)), '["m1","m2"]["p1","p2"]');
+  const laptop = JSON.parse(JSON.stringify(m)); FU.markRemoved(laptop, 'meetings', 'm1'); laptop.meetings = laptop.meetings.filter(x => x.id !== 'm1'); laptop.updated = '2026-11-18T03:00:00Z';
+  eq('meeting deleted on laptop stays deleted when merged with old phone copy', FU.mergeCase(phone, laptop).meetings.map(x => x.id), ['m2']);
+  const edited = JSON.parse(JSON.stringify(m)); edited.meetings[0].summary = 'fixed typo'; edited.updated = '2026-11-18T04:00:00Z';
+  eq('edit to the same meeting: newer wins', FU.mergeCase(m, edited).meetings.find(x => x.id === 'm1').summary, 'fixed typo');
+}
+
 console.log('Summary maths (sample client)');
 const c = sampleCase(PS), s = PS.summarise(c);
 eq('death = 300k + 100k + 200k (lapsed 50k not counted)', s.cats.death.total, 600000);
