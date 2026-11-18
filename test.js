@@ -233,6 +233,37 @@ console.log('Phone, iPad and laptop editing the same client');
   eq('edit to the same meeting: newer wins', FU.mergeCase(m, edited).meetings.find(x => x.id === 'm1').summary, 'fixed typo');
 }
 
+console.log('Clients vs prospects, activities, follow-up tracker');
+{
+  const FU = require('./docs/followup.js');
+  eq('kind: set, or by whether policies exist', [FU.kindOf({kind: 'prospect', policies: [1]}), FU.kindOf({policies: [1]}), FU.kindOf({policies: []})], ['prospect', 'client', 'prospect']);
+  const M = (id, date, type, extra) => Object.assign({id, date, type, outcome: 'none'}, extra || {});
+  const people = [
+    {id: 'a', client: {name: 'A'}, policies: [], meetings: [M('a1', '2026-11-18', 'approach')]},
+    {id: 'b', client: {name: 'B'}, policies: [], meetings: [M('b1', '2026-11-18', 'fact_find'), M('b2', '2026-11-18', 'follow_up', {visit: false})]},
+    {id: 'c', client: {name: 'C'}, policies: [], meetings: [M('c1', '2026-11-18', 'closing', {outcome: 'closed'})]}
+  ];
+  const g = FU.activitiesOn(people, '2026-11-18');
+  eq('activities split by type', ['approach', 'open', 'present', 'follow_up', 'close'].map(k => g[k].length), [1, 1, 0, 1, 1]);
+  eq('WhatsApp follow-up is an activity but not a 三访 visit', [FU.meetingsOn(people, '2026-11-18').length, FU.meetingsOn(people, '2026-11-18', true).length, FU.dayStats(people)['2026-11-18'].met], [3, 4, 3]);
+  const p = {id: 'p', client: {name: 'P'}, policies: [], meetings: [M('p1', '2026-11-10', 'fact_find'), M('p2', '2026-11-12', 'presentation'), M('p3', '2026-11-13', 'follow_up', {visit: false}), M('p4', '2026-11-14', 'follow_up')]};
+  const t = FU.followTrack(p, '2026-11-17');
+  eq('tracker: 5 days since presentation, 2 of 5 done', [t.presDate, t.days, t.done, t.status], ['2026-11-12', 5, 2, 'active']);
+  eq('tracker: slots Day 1-5 with due dates, 2 late, Day 5 due today', [t.slots.map(s => s.due), t.slots.filter(s => s.late).length, t.slots[4].today], [['2026-11-13', '2026-11-14', '2026-11-15', '2026-11-16', '2026-11-17'], 2, true]);
+  eq('tracker: needs attention (behind, quiet 3 days)', [t.attention, t.reasons], [true, ['2 follow-ups behind', 'no follow-up for 3 days']]);
+  eq('no presentation -> not tracked', FU.followTrack({meetings: [M('x', '2026-11-12', 'fact_find')]}, '2026-11-17'), null);
+  const closed = JSON.parse(JSON.stringify(p)); closed.meetings.push(M('p5', '2026-11-16', 'closing', {outcome: 'closed'}));
+  eq('closed leaves the list', [FU.followTrack(closed, '2026-11-17').status, FU.followList([closed], '2026-11-17').length], ['closed', 0]);
+  const stopped = Object.assign(JSON.parse(JSON.stringify(p)), {fuStop: '2026-11-16'});
+  eq('stop tracking leaves the list', FU.followList([stopped], '2026-11-17').length, 0);
+  const again = JSON.parse(JSON.stringify(stopped)); again.meetings.push(M('p6', '2026-11-20', 'presentation'));
+  eq('a new presentation starts tracking again from Day 0', [FU.followTrack(again, '2026-11-20').presDate, FU.followTrack(again, '2026-11-20').done, FU.followList([again], '2026-11-20').length], ['2026-11-20', 0, 1]);
+  const ontime = {id: 'o', client: {name: 'O'}, meetings: [M('o1', '2026-11-12', 'presentation'), M('o2', '2026-11-13', 'follow_up')]};
+  eq('on schedule -> no attention flag', FU.followTrack(ontime, '2026-11-13').attention, false);
+  eq('presented yesterday, Day 1 due today -> not behind yet', FU.followTrack({meetings: [M('k', '2026-11-17', 'presentation')]}, '2026-11-18').attention, false);
+  eq('AI visit flag: false only when said', [FU.normalizeDraft({visit: false}, []).visit, FU.normalizeDraft({}, []).visit], [false, true]);
+}
+
 console.log('Summary maths (sample client)');
 const c = sampleCase(PS), s = PS.summarise(c);
 eq('death = 300k + 100k + 200k (lapsed 50k not counted)', s.cats.death.total, 600000);

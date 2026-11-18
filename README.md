@@ -17,6 +17,13 @@ The follow-up PDF: a personal letter (what we talked about, what matters to you,
 
 Every client has a farm card: a **Before you meet** brief (last meeting, family and work, what they care about, concerns, agreed next step), a timeline of every meeting, and their details. Only names or nicknames are kept: no phone, IC or medical details. The AI is told to leave those out and the app also strips IC and phone numbers. Clients with a follow-up date in the next 3 days or overdue appear under **Follow up soon** on the home screen. With sync on, the farm syncs between your iPad and phone, locked with your passphrase.
 
+## Sections (bottom bar)
+
+- **🏠 Home:** Record a meeting, the follow-up summary card, and your people split into **⭐ Existing Clients** (policies you manage; their policy summaries live here) and **🌱 Prospects** (people you are approaching or following up). Each person has a bar to move them between the two. When a prospect closes, the app offers to move them to Existing Clients. Older records count as clients if they have policies, otherwise as prospects.
+- **📋 Activities:** pick a day and see, separately, who you **Approached, Opened, Presented, Followed up and Closed**, with time, client/prospect and notes. **+ Add** logs an activity (date, name, type, notes) without recording.
+- **🔁 Follow-ups:** everyone you present to is listed automatically with a Day 1 to Day 5 table (First to Fifth follow-up), days since the presentation, follow-ups done (x/5), and a red flag when someone is behind or has had no follow-up for 3 days. **Log follow-up** (WhatsApp, call or met), **Closed** or **Stop**. A new presentation starts the plan again.
+- **3️⃣ 三访:** only face-to-face visits: today's count, V / R / month, the report, and the last 14 days. WhatsApp or call follow-ups count as activities but not as 三访 visits (untick "Face-to-face visit" when logging).
+
 ## Daily 三访 report
 
 **While recording**, the record screen shows the REDEFINE guide (11 questions: time spent, what you did, CFF priorities, which stage had an issue (Relax–Disturb–Release–Close), income and cash flow, hot button, concept, plan and ANP, objections, how you handled them, next move). You don't have to cover all of them. The AI files your answers under each question in the client's farm, and you can edit them on the review screen.
@@ -121,7 +128,7 @@ Clients are locked with your passphrase before they leave the device. The server
 ## For maintenance
 
 - `docs/` is the app. `logic.js` handles recognition and calculations, `report.js` builds the PDF pages, `app.js` runs the screens, and `config.js` holds the server address.
-- `node test.js` runs 110 checks covering recognition, messy numbers, the never-guess rules and the summary maths.
+- `node test.js` runs 123 checks covering recognition, messy numbers, the never-guess rules and the summary maths.
 - `node serve.js` previews the app at http://localhost:5193.
 - `samples/` holds the sample PDF made by the app.
 - `node test-sync-server.js` runs the real team server code in memory on port 5194 to test sync (open localhost:5194 and 127.0.0.1:5194 as two devices; team code `test-team-code`).

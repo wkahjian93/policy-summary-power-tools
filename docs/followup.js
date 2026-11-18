@@ -2,14 +2,28 @@
 (function (root) {
   'use strict';
   const MEETING_TYPES = [
-    {id: 'fact_find', zh: '了解需求 / Open', en: 'Fact find / Open'},
+    {id: 'approach', zh: '接触 Approach', en: 'Approach'},
+    {id: 'fact_find', zh: '了解需求 / Open', en: 'Open'},
+    {id: 'presentation', zh: 'Proposal 讲解 Present', en: 'Present'},
+    {id: 'follow_up', zh: '跟进 Follow-up', en: 'Follow-up'},
+    {id: 'closing', zh: '成交 Close', en: 'Close'},
     {id: 'recruitment', zh: '招募 Recruitment', en: 'Recruitment'},
-    {id: 'presentation', zh: 'Proposal 讲解', en: 'Presentation'},
-    {id: 'follow_up', zh: 'Follow up', en: 'Follow-up'},
-    {id: 'closing', zh: '成交', en: 'Closing'},
     {id: 'service', zh: '服务 / Review', en: 'Service / review'},
     {id: 'other', zh: '其他', en: 'Other'}
   ];
+  /* sales activity categories (the Activities section) */
+  const ACTIVITIES = [
+    {id: 'approach', zh: '接触', en: 'Approach'}, {id: 'open', zh: 'Open', en: 'Open'}, {id: 'present', zh: '讲解', en: 'Present'},
+    {id: 'follow_up', zh: '跟进', en: 'Follow-Up'}, {id: 'close', zh: '成交', en: 'Close'}
+  ];
+  function activityOf(m) {
+    if (m.type === 'closing' || m.outcome === 'closed') return 'close';
+    return {approach: 'approach', fact_find: 'open', presentation: 'present', follow_up: 'follow_up'}[m.type] || 'other';
+  }
+  /* existing client (policies we manage) or prospect; older records decide by whether policies were added */
+  const kindOf = c => c.kind || ((c.policies || []).length ? 'client' : 'prospect');
+  /* a face-to-face 三访 visit (a WhatsApp/call follow-up is a sales activity but not a visit) */
+  const isVisit = m => m.visit !== false;
   const OUTCOMES = ['closed', 'considering', 'not_interested', 'none'];
   const LANGS = {zh: '简体中文 (Malaysian Chinese, warm, natural; English insurance terms like medical card, CI are fine)', en: 'English (Malaysian, warm, plain)', ms: 'Bahasa Melayu (mesra, mudah)'};
 
@@ -33,7 +47,7 @@
     {k: 'next', zh: '下一步跟他约了什么？', en: 'What next move did you arrange?'}
   ];
   const TAGS = ['O', 'F', 'P', 'R'];   // O = appointment made, F = follow up, P = presentation, R = recruitment activity
-  const tagsFor = type => ({presentation: ['P'], closing: ['P'], follow_up: ['F'], recruitment: ['R']})[type] || ['O'];
+  const tagsFor = type => ({presentation: ['P'], closing: ['P'], follow_up: ['F'], recruitment: ['R']})[type] || ['O'];   // approach, open, service, other -> O
 
   function hintFor(clientName) { return (clientName ? 'Client: ' + clientName + '. ' : '') + HINT; }
 
@@ -61,12 +75,14 @@
       '- "reportNote": 1-3 short sentences for the team\'s daily 三访 report, in the agent\'s style, e.g. "Direct approach, simple survey done, holding a company medical card, proposed income protection, will consider. Will follow up." Use the agent\'s main language (English if mixed). No IC, phone or medical details.',
       '- "tags": "O" if an appointment was made / first opening, "F" if it was a follow-up meeting, "P" if a plan/proposal was presented, "R" if it was a recruitment activity (career talk, CFG test, part-time, joining). One or more.',
       '- "time": the meeting time as HH:MM 24-hour if the agent said it, else null.',
+      '- meeting.type: approach = first contact with someone new (no appointment yet); fact_find = Open, an appointment/fact-find meeting; presentation = a plan was presented; follow_up = following up after a presentation; closing = the case was closed.',
+      '- "visit": true if the agent met the person face to face (in person or video call), false if it was only WhatsApp, message or phone call.',
       'Answer with JSON only:',
       '{"client":{"name":"","nickname":"","family":"","work":"","personality":"","cares":[""],"objections":[""]},' +
-      '"meeting":{"type":"fact_find|recruitment|presentation|follow_up|closing|service|other","summary":"2-4 factual sentences for the agent\'s own record","nextStep":"","followUpDate":"YYYY-MM-DD or null","outcome":"closed|considering|not_interested|none"},' +
+      '"meeting":{"type":"approach|fact_find|presentation|follow_up|closing|recruitment|service|other","summary":"2-4 factual sentences for the agent\'s own record","nextStep":"","followUpDate":"YYYY-MM-DD or null","outcome":"closed|considering|not_interested|none"},' +
       '"letter":{"title":"","greeting":"","discussed":[""],"matters":[""],"recommendation":"","nextStep":"","closing":""},' +
       '"concepts":["concept id"],"whatsapp":"","numbers":[{"what":"","value":""}],' +
-      '"qa":{' + QUESTIONS.map(q => '"' + q.k + '":""').join(',') + '},"reportNote":"","tags":["P|O|R"],"time":"HH:MM or null"}',
+      '"qa":{' + QUESTIONS.map(q => '"' + q.k + '":""').join(',') + '},"reportNote":"","tags":["O|F|P|R"],"time":"HH:MM or null","visit":true}',
       'AGENT\'S NOTE:\n' + String(o.transcript || '').slice(0, 12000)
     ].join('\n');
   }
@@ -85,7 +101,7 @@
     const qa = {}; QUESTIONS.forEach(q => { qa[q.k] = scrub(r.qa && r.qa[q.k]); });
     const tags = TAGS.filter(t => list(r.tags).map(x => x.toUpperCase()).includes(t));
     return {
-      qa, reportNote: scrub(r.reportNote), tags: tags.length ? tags : tagsFor(type), time: timeOk(r.time),
+      qa, reportNote: scrub(r.reportNote), tags: tags.length ? tags : tagsFor(type), time: timeOk(r.time), visit: r.visit !== false,
       client: {name: scrub(c.name), nickname: scrub(c.nickname), family: scrub(c.family), work: scrub(c.work), personality: scrub(c.personality),
         cares: list(c.cares).map(scrub), objections: list(c.objections).map(scrub)},
       meeting: {type: MEETING_TYPES.some(t => t.id === m.type) ? m.type : 'other', summary: scrub(m.summary), nextStep: scrub(m.nextStep),
@@ -115,7 +131,7 @@
     if (d.client.nickname && !c.client.nickname) c.client.nickname = d.client.nickname;
     c.meetings = c.meetings || [];
     const m = Object.assign({id: Math.random().toString(36).slice(2, 10), date: extra.date, time: d.time || extra.time || '', concepts: d.concepts.slice(), sentPdf: !!extra.sentPdf, letterTitle: d.letter.title,
-      tags: (d.tags || []).slice(), reportNote: d.reportNote || '', qa: Object.assign({}, d.qa || {})}, d.meeting);
+      tags: (d.tags || []).slice(), reportNote: d.reportNote || '', qa: Object.assign({}, d.qa || {}), visit: d.visit !== false}, d.meeting);
     c.meetings.push(m);
     c.meetings.sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
     c.updated = new Date().toISOString();
@@ -141,16 +157,56 @@
   /* ---------- 三访 daily report ---------- */
   const TARGET = 3;
   const TARGETS = {week: 18, recruit: 6, month: 72};   // defaults; the agent can change them in Settings
-  function meetingsOn(cases, date) {
+  /* 三访 visits on a day (face-to-face only); allActivities: true includes WhatsApp/call follow-ups too */
+  function meetingsOn(cases, date, allActivities) {
     const out = [];
-    (cases || []).forEach(c => { if (!c.sample) (c.meetings || []).forEach(m => { if (m.date === date) out.push({c, m}); }); });
+    (cases || []).forEach(c => { if (!c.sample) (c.meetings || []).forEach(m => { if (m.date === date && (allActivities || isVisit(m))) out.push({c, m}); }); });
     return out.sort((a, b) => (a.m.time || '99').localeCompare(b.m.time || '99'));
+  }
+  /* the Activities section: who was approached / opened / presented / followed up / closed on a day */
+  function activitiesOn(cases, date) {
+    const g = {approach: [], open: [], present: [], follow_up: [], close: [], other: []};
+    meetingsOn(cases, date, true).forEach(x => g[activityOf(x.m)].push(x));
+    return g;
+  }
+
+  /* ---------- follow-up tracker: after a presentation, 5 follow-ups on Day 1–5 ----------
+     Starts from the latest presentation. Each follow-up meeting/attempt dated on or after the presentation counts.
+     Leaves the list when the person closes, or the agent stops tracking. */
+  const FU_STEPS = 5;
+  const daysBetween = (a, b) => Math.round((new Date(b + 'T00:00:00Z') - new Date(a + 'T00:00:00Z')) / 864e5);
+  function followTrack(c, today) {
+    const ms = (c.meetings || []).slice().sort((x, y) => ((x.date || '') + (x.time || '')).localeCompare((y.date || '') + (y.time || '')));
+    let pres = null;
+    ms.forEach(m => { if (m.type === 'presentation' || (m.tags || []).includes('P') && m.type !== 'closing') pres = m; });
+    if (!pres) return null;
+    const after = ms.slice(ms.indexOf(pres) + 1);   // ms is in date/time order
+    const closed = after.find(m => m.type === 'closing' || m.outcome === 'closed') || (pres.outcome === 'closed' ? pres : null);
+    const dropped = (c.fuStop && c.fuStop >= pres.date) || after.some(m => m.outcome === 'not_interested');
+    const steps = after.filter(m => m.type === 'follow_up').slice(0, FU_STEPS);
+    const days = Math.max(0, daysBetween(pres.date, today)), done = steps.length;
+    const dueBefore = Math.min(Math.max(days - 1, 0), FU_STEPS);   // follow-ups that were due before today (today's one is still on time)
+    const last = steps.length ? steps[steps.length - 1].date : pres.date;
+    const sinceLast = Math.max(0, daysBetween(last, today));
+    const status = closed ? 'closed' : dropped ? 'stopped' : done >= FU_STEPS ? 'done5' : 'active';
+    const reasons = [];
+    if (status === 'active' && done < dueBefore) reasons.push(`${dueBefore - done} follow-up${dueBefore - done > 1 ? 's' : ''} behind`);
+    if ((status === 'active' || status === 'done5') && sinceLast >= 3) reasons.push(`no follow-up for ${sinceLast} days`);
+    if (status === 'done5') reasons.push('5 follow-ups done, not closed yet');
+    return {pres, presDate: pres.date, days, done, steps, status, sinceLast, attention: reasons.length > 0, reasons,
+      slots: Array.from({length: FU_STEPS}, (_, i) => ({n: i + 1, due: addDays(pres.date, i + 1), done: steps[i] || null, late: !steps[i] && days > i + 1, today: !steps[i] && days === i + 1}))};
+  }
+  function followList(cases, today) {
+    return (cases || []).filter(c => !c.sample).map(c => ({c, t: followTrack(c, today)}))
+      .filter(x => x.t && (x.t.status === 'active' || x.t.status === 'done5'))
+      .sort((a, b) => (b.t.attention - a.t.attention) || (b.t.days - a.t.days));
   }
   const isRecruit = m => (m.tags || []).includes('R');
   /* per day: distinct clients met, presentations, closed, recruitment visits */
   function dayStats(cases) {
     const days = {};
     (cases || []).forEach(c => { if (c.sample) return; (c.meetings || []).forEach(m => {
+      if (!isVisit(m)) return;   // 三访 numbers count face-to-face visits only
       const d = days[m.date] = days[m.date] || {met: 0, pres: 0, closed: 0, rec: 0, ids: {}, recIds: {}};
       if (!d.ids[c.id]) { d.ids[c.id] = 1; d.met++; }
       if (isRecruit(m) && !d.recIds[c.id]) { d.recIds[c.id] = 1; d.rec++; }
@@ -262,7 +318,7 @@
     return bits.join(' ');
   }
 
-  const api = {mergeCase, markRemoved, CAL_URL, CRM_URL, calendarLink, dinglianLink, TARGET, TARGETS, QUESTIONS, TAGS, tagsFor, meetingsOn, dayStats, streak, weekStats, monthStats, timeLabel, noteFor, reportText, addDays,
+  const api = {ACTIVITIES, activityOf, kindOf, isVisit, activitiesOn, followTrack, followList, FU_STEPS, daysBetween, mergeCase, markRemoved, CAL_URL, CRM_URL, calendarLink, dinglianLink, TARGET, TARGETS, QUESTIONS, TAGS, tagsFor, meetingsOn, dayStats, streak, weekStats, monthStats, timeLabel, noteFor, reportText, addDays,
     MEETING_TYPES, LANGS, HINT, hintFor, buildPrompt, normalizeDraft, scrub, matchClient, applyToFarm, brief, typeLabel};
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FU = api;
 })(this);

@@ -65,6 +65,8 @@
     window.scrollTo(0, 0);
     if (h[0] === 'record') return recordScreen(h[1] && getCase(h[1]) ? h[1] : null);
     if (h[0] === 'day') return dayScreen(h[1]);
+    if (h[0] === 'activity') return activityScreen(h[1], h[2]);
+    if (h[0] === 'followups') return followScreen();
     if (h[0] === 'team') return teamScreen();
     if (h[0] === 'case' && getCase(h[1])) {
       if (h[2] === 'policy') return editPolicy(getCase(h[1]), h[3]);
@@ -78,34 +80,36 @@
   /* ---------- home ---------- */
   function home() {
     const list = cases.slice().sort((a, b) => (b.updated || '').localeCompare(a.updated || ''));
-    const due = dueList(), q = (home.q || '').toLowerCase();
-    const shown = q ? list.filter(c => (c.client.name + ' ' + (c.client.nickname || '')).toLowerCase().includes(q)) : list;
+    const due = dueList(), q = (home.q || '').toLowerCase(), tab = load('pspt.homeTab', 'prospect');
+    const nClient = list.filter(c => FU.kindOf(c) === 'client').length, nProspect = list.length - nClient;
+    const shown = list.filter(c => FU.kindOf(c) === tab).filter(c => !q || (c.client.name + ' ' + (c.client.nickname || '')).toLowerCase().includes(q));
     app.innerHTML = `<header class="bar"><div class="brand"><img src="logo.png" alt=""><div><b>On Field</b><span>REDEFINE</span></div></div><button class="ib" id="set" aria-label="Settings">${ICONS.gear}</button></header>
       <div class="wrap">
         <div class="card hero"><h2>Just met a client?</h2><p>Speak for 1–2 minutes. On Field writes the follow-up PDF and WhatsApp message, and saves the meeting to your client farm.</p>
           <button class="btn primary block rec-big" id="recNew">🎙 Record a meeting</button>
           ${rec && (rec.transcript || rec.draft) ? '<button class="btn block" id="recResume" style="margin-top:8px">Continue unfinished note</button>' : ''}
-          <button class="btn block ghost-l" id="new">+ New client · policy summary</button></div>
-        ${todayCard()}
+          <button class="btn block ghost-l" id="new">+ New client or prospect</button></div>
+        ${followCard()}
         ${settings.name ? '' : '<div class="checks"><b>Add your name first.</b> It goes at the bottom of every PDF. <a href="#" id="set2">Open settings</a></div>'}
         ${settings.name && !settings.intro ? '<div class="checks"><b>Set up "My profile" once.</b> Your photo, intro and why you do insurance go on every follow-up PDF. <a href="#" id="prof2">Open My profile</a></div>' : ''}
         ${due.length ? `<h2 class="muted" style="margin:6px 2px 8px;font-weight:600">FOLLOW UP SOON</h2>${due.map(({c, m}) => `<a class="item" href="#/case/${c.id}"><span class="stripe" style="background:${m.followUpDate < todayISO() ? 'var(--err)' : 'var(--gold)'}"></span><div class="t"><b>${esc(c.client.name)}</b><span>${esc(m.nextStep || FU.typeLabel(m.type))}</span></div><div class="amt">${esc(m.followUpDate)}<small>${m.followUpDate < todayISO() ? 'overdue' : m.followUpDate === todayISO() ? 'today' : 'soon'}</small></div></a>`).join('')}` : ''}
         ${installTip()}
         <div id="syncLine"></div>
-        <h2 class="muted" style="margin:6px 2px 8px;font-weight:600">MY CLIENTS (${list.length})</h2>
-        ${list.length > 6 ? `<div class="f"><input id="qC" type="search" placeholder="Search clients" value="${esc(home.q || '')}"></div>` : ''}
+        <div class="seg kindtabs" role="tablist"><button type="button" data-kt="client" aria-pressed="${tab === 'client'}">⭐ Existing Clients (${nClient})</button><button type="button" data-kt="prospect" aria-pressed="${tab === 'prospect'}">🌱 Prospects (${nProspect})</button></div>
+        <p class="muted" style="margin:-6px 2px 8px">${tab === 'client' ? 'People whose policies you manage or review. Their policy summaries live here.' : 'People you are approaching or following up. Not clients yet.'}</p>
+        ${list.length > 6 ? `<div class="f"><input id="qC" type="search" placeholder="Search ${tab === 'client' ? 'clients' : 'prospects'}" value="${esc(home.q || '')}"></div>` : ''}
         ${shown.length ? shown.map(c => {
           const s = PS.summarise(c), n = PS.pendingChecks(c).length, ms = c.meetings || [], last = ms[ms.length - 1];
           const sub = [c.client.nickname, last ? 'met ' + last.date : '', c.policies.length ? c.policies.length + ' polic' + (c.policies.length === 1 ? 'y' : 'ies') : ''].filter(Boolean).join(' · ') || 'updated ' + new Date(c.updated).toLocaleDateString('en-GB');
           return `<a class="item" href="#/case/${c.id}"><div class="t"><b>${esc(c.client.name || 'Unnamed client')}${c.sample ? ' <span class="pill grey">Sample</span>' : ''}</b><span>${esc(sub)}</span></div>
             <div class="amt">${c.policies.length ? PS.rm(s.cats.death.total, {short: true}) : ms.length}<small>${n ? `<span class="pill warn">${n} to check</span>` : c.policies.length ? 'death cover' : 'meeting' + (ms.length === 1 ? '' : 's')}</small></div></a>`;
-        }).join('') : list.length ? '<div class="empty">No client matches.</div>' : '<div class="empty">No clients yet.<br>Tap <b>Record a meeting</b> after you meet someone, or <a href="#" id="demo">open a sample</a> to see a policy summary.</div>'}
+        }).join('') : q ? '<div class="empty">No one matches.</div>' : tab === 'client' ? '<div class="empty">No existing clients yet.<br>Add one with <b>+ New client or prospect</b>, or move a prospect here when they close.</div>' : '<div class="empty">No prospects yet.<br>Tap <b>Record a meeting</b> after you meet someone.</div>'}
         ${list.length && !list.some(c => c.sample) ? '<p class="muted" style="text-align:center;margin:10px 0"><a href="#" id="demo">Open the sample client</a></p>' : ''}
         <p class="muted" style="text-align:center;margin:18px 10px">${syncCfg ? 'Clients are locked with your sync passphrase before syncing. Photos are read and then discarded.' : 'Client details are saved on this device only. Photos are read and then discarded.'}</p>
-      </div>`;
-    $('#new').onclick = newCase;
+      </div>${tabbar('home')}`;
+    $('#new').onclick = () => newCase(tab);
     $('#recNew').onclick = () => startRecord(null);
-    wireTodayCard();
+    $$('[data-kt]').forEach(b => b.onclick = () => { save('pspt.homeTab', b.dataset.kt); home.q = ''; home(); });
     const rr = $('#recResume'); if (rr) rr.onclick = () => { location.hash = '#/record' + (rec.caseId ? '/' + rec.caseId : ''); };
     const p2 = $('#prof2'); if (p2) p2.onclick = e => { e.preventDefault(); openProfile(); };
     const qc = $('#qC'); if (qc) qc.oninput = () => { home.q = qc.value; const pos = qc.selectionStart; home(); const n = $('#qC'); n.focus(); n.setSelectionRange(pos, pos); };
@@ -116,30 +120,36 @@
     const d = $('#demo'); if (d) d.onclick = e => { e.preventDefault(); const c = window.sampleCase(PS); cases.push(c); saveCases(); location.hash = '#/case/' + c.id; };
   }
 
-  function newCase() {
-    const el = sheet(`<h3>New client</h3><p>Only the name is needed. Age and income make the summary more useful.</p>
+  function newCase(kind) {
+    let k = kind === 'client' ? 'client' : 'prospect';
+    const el = sheet(`<h3>New person</h3>
+      <div class="seg" id="nKind"><button type="button" data-k="client" aria-pressed="${k === 'client'}">⭐ Existing client</button><button type="button" data-k="prospect" aria-pressed="${k === 'prospect'}">🌱 Prospect</button></div>
+      <p>Only the name is needed. Age and income make a policy summary more useful.</p>
       <div class="f"><label for="nName">Client name (as it should appear on the PDF)</label><input id="nName" autocomplete="off"></div>
       <div class="grid2"><div class="f"><label for="nAge">Age</label><input id="nAge" inputmode="numeric"></div>
       <div class="f"><label for="nInc">Annual income (optional)</label><input id="nInc" inputmode="decimal" placeholder="e.g. 84k"></div></div>
       <div class="row"><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok>Create</button></div>`);
     $('#nName', el).focus();
+    $$('#nKind button', el).forEach(b => b.onclick = () => { k = b.dataset.k; $$('#nKind button', el).forEach(x => x.setAttribute('aria-pressed', x === b)); });
     $('[data-x]', el).onclick = closeSheet;
     $('[data-ok]', el).onclick = () => {
       const name = $('#nName', el).value.trim();
       if (!name) { $('#nName', el).classList.add('flag'); return; }
       const now = new Date().toISOString();
-      const c = {id: PS.uid(), created: now, updated: now, client: {name, age: PS.parseAmount($('#nAge', el).value).value, income: PS.parseAmount($('#nInc', el).value).value},
+      const c = {id: PS.uid(), created: now, updated: now, kind: k, client: {name, age: PS.parseAmount($('#nAge', el).value).value, income: PS.parseAmount($('#nInc', el).value).value},
         guide: Object.assign({}, settings.guide), policies: []};
-      cases.push(c); saveCases(); closeSheet(); location.hash = '#/case/' + c.id;
+      cases.push(c); save('pspt.homeTab', k); saveCases(); closeSheet(); location.hash = '#/case/' + c.id;
     };
   }
 
   /* ---------- one client ---------- */
   function caseScreen(c) {
-    const s = PS.summarise(c), checks = PS.pendingChecks(c);
+    const s = PS.summarise(c), checks = PS.pendingChecks(c), kind = FU.kindOf(c);
     app.innerHTML = bar(c.client.name || 'Client', '#/', `<button class="ib" id="del" aria-label="Delete client">${ICONS.trash}</button>`) + `
       <div class="wrap">
-        ${farmCard(c)}
+        <div class="kindbar ${kind}"><span>${kind === 'client' ? '⭐ Existing client' : '🌱 Prospect'}</span><button type="button" class="btn sm" id="kindSw">${kind === 'client' ? 'Move to Prospects' : 'Move to Existing Clients'}</button></div>
+        ${kind === 'client' ? '' : farmCard(c)}
+        ${kind === 'client' ? '' : `<details class="polwrap" ${c.policies.length ? 'open' : ''}><summary><b>Their current policies</b> <span class="muted">(optional review before they become a client)</span></summary>`}
         <h2 class="muted" style="margin:14px 2px 8px;font-weight:600">POLICY SUMMARY</h2>
         ${c.policies.length ? `<div class="card hero"><h2>So far</h2>
           <div class="stat"><div><span>Death</span><b>${PS.rm(s.cats.death.total, {short: true})}</b></div><div><span>CI</span><b>${PS.rm(s.cats.ci.total, {short: true})}</b></div><div><span>Medical/yr</span><b>${s.medical.annual != null ? PS.rm(s.medical.annual, {short: true}) : '—'}</b></div></div>
@@ -162,6 +172,7 @@
           return `<a class="item" href="#/case/${c.id}/policy/${p.id}"><span class="stripe" style="background:${PS.insurerColor(p.insurer)}"></span><div class="t"><b>${esc(p.insurer || 'Insurer?')}</b><span>${esc(p.productName || 'Plan')}${p.policyNo ? ' · ' + esc(p.policyNo) : ''}</span><span>${esc(tags || 'No benefits yet')}</span></div>
             <div class="amt">${n ? `<span class="pill warn">${n} check</span>` : out ? `<span class="pill grey">${esc(p.status)}</span>` : '<span class="pill ok">OK</span>'}<small>${p.source === 'photo' ? 'from photo' : 'keyed in'}</small></div></a>`;
         }).join('') : '<div class="empty">No policies yet. Tap <b>Add policy pages</b>, add every policy the client has from any insurer, then read them all at once.</div>'}
+        ${kind === 'client' ? farmCard(c) : '</details>'}
         <div class="card" style="margin-top:12px"><h2>Client</h2>
           <div class="f"><label for="cName">Name on PDF</label><input id="cName" value="${esc(c.client.name)}"></div>
           <div class="grid2"><div class="f"><label for="cAge">Age</label><input id="cAge" inputmode="numeric" value="${money(c.client.age)}"></div>
@@ -172,7 +183,8 @@
       ${c.policies.length ? `<div class="dock"><a class="btn navy" href="#/case/${c.id}/summary">See policy summary &amp; PDF</a></div>` : ''}`;
     $('#key').onclick = () => { location.hash = '#/case/' + c.id + '/policy/new'; };
     wireFarm(c);
-    $('#addP').onclick =() => { if (!tray || tray.caseId !== c.id) { clearTray(); tray = {caseId: c.id, items: [], notes: []}; } showTray(c); };
+    $('#kindSw').onclick = () => setKind(c, kind === 'client' ? 'prospect' : 'client');
+    $('#addP').onclick = () => { if (!tray || tray.caseId !== c.id) { clearTray(); tray = {caseId: c.id, items: [], notes: []}; } showTray(c); };
     $('#snap').onclick = () => $('#camIn').click();
     $('#pics').onclick = () => $('#file').click();
     $('#pdfB').onclick = () => $('#pdfIn').click();
@@ -919,7 +931,8 @@
       <div class="card"><h2>Client</h2>
         ${c ? `<p><b>${esc(c.client.name)}</b> · saved to this client</p>` : `
           <div class="f"><label for="cWho">Save to</label><select id="cWho"><option value="">New client: ${esc(d.client.name || 'name below')}</option>${cases.filter(x => !x.sample).map(x => `<option value="${x.id}" ${rec.matchId === x.id ? 'selected' : ''}>${esc(x.client.name)}${x.client.nickname ? ' (' + esc(x.client.nickname) + ')' : ''}</option>`).join('')}</select></div>
-          ${rec.matchId ? '<p class="muted" style="color:var(--warn);margin:-4px 0 8px">Looks like a client you already have. Check before saving.</p>' : ''}`}
+          ${rec.matchId ? '<p class="muted" style="color:var(--warn);margin:-4px 0 8px">Looks like a client you already have. Check before saving.</p>' : ''}
+          <div class="seg" id="nwKind" ${rec.matchId ? 'hidden' : ''}><button type="button" data-k="prospect" aria-pressed="${rec.newKind !== 'client'}">🌱 New prospect</button><button type="button" data-k="client" aria-pressed="${rec.newKind === 'client'}">⭐ New existing client</button></div>`}
         <div class="f"><label for="pdfN">Name on the PDF (how you address them)</label><input id="pdfN" value="${esc(rec.pdfName || '')}" placeholder="e.g. 陈先生 / Ah Seng / Puan Aminah"></div>
         <p class="muted">No phone or IC numbers are saved. Use a nickname or tag (e.g. "陈先生 Bayan Lepas") to tell people apart.</p>
       </div>
@@ -952,6 +965,7 @@
         <div class="grid2"><div class="f"><label>Time</label><input id="mTime" type="time" value="${esc(d.time)}"></div>
         <div class="f"><label>Type</label><div class="tagrow">${FU.TAGS.map(t => `<button type="button" class="chip" data-tag="${t}" aria-pressed="${d.tags.includes(t)}">${t}</button>`).join('')}</div></div></div>
         <p class="muted" style="margin:-4px 0 8px">O = appointment made · F = follow up · P = presentation · R = recruitment</p>
+        <label class="chk"><input type="checkbox" id="mVisit" ${d.visit !== false ? 'checked' : ''}> Face-to-face visit (counts for 三访)</label>
         <div class="f"><label>Report note (what the group sees)</label>${ta('mNote', d.reportNote, 3)}</div>
       </div>
     </div>
@@ -972,7 +986,9 @@
     $('#mTime').onchange = e => { d.time = e.target.value; saveRec(); };
     bind('mNote', v => d.reportNote = v);
     $$('[data-tag]').forEach(b => b.onclick = () => { const t = b.dataset.tag, i = d.tags.indexOf(t); if (i >= 0) d.tags.splice(i, 1); else d.tags.push(t); d.tags.sort((x, y) => FU.TAGS.indexOf(x) - FU.TAGS.indexOf(y)); b.setAttribute('aria-pressed', i < 0); saveRec(); });
-    const who = $('#cWho'); if (who) who.onchange = () => { rec.matchId = who.value; saveRec(); };
+    const who = $('#cWho'); if (who) who.onchange = () => { rec.matchId = who.value; saveRec(); const k = $('#nwKind'); if (k) k.hidden = !!who.value; };
+    $$('#nwKind button').forEach(b => b.onclick = () => { rec.newKind = b.dataset.k; saveRec(); $$('#nwKind button').forEach(x => x.setAttribute('aria-pressed', x === b)); });
+    const vz = $('#mVisit'); if (vz) vz.onchange = () => { d.visit = vz.checked; saveRec(); };
     $$('[data-n]').forEach(b => b.onchange = () => { d.numbers[+b.dataset.n].ok = b.checked; saveRec(); const left = d.numbers.filter(n => !n.ok).length;
       const mk = $('#mkFU'); mk.disabled = !!left; mk.textContent = left ? `Check ${left} number${left > 1 ? 's' : ''}` : 'Create PDF & send'; $('.numcheck h2').textContent = `Numbers to check (${left} left)`; });
     $$('.chip').forEach(b => b.onclick = () => { const k = b.dataset.k, i = d.concepts.indexOf(k); if (i >= 0) d.concepts.splice(i, 1); else d.concepts.push(k); b.setAttribute('aria-pressed', i < 0); saveRec();
@@ -989,7 +1005,7 @@
     let target = c || (rec.matchId ? getCase(rec.matchId) : null);
     if (!target) {
       const now = new Date().toISOString();
-      target = {id: PS.uid(), created: now, updated: now, client: {name: d.client.name || name, nickname: '', age: null, income: null}, guide: Object.assign({}, settings.guide), policies: [], meetings: []};
+      target = {id: PS.uid(), created: now, updated: now, kind: rec.newKind === 'client' ? 'client' : 'prospect', client: {name: d.client.name || name, nickname: '', age: null, income: null}, guide: Object.assign({}, settings.guide), policies: [], meetings: []};
       cases.push(target);
     }
     let blob = null, file = null;
@@ -1038,6 +1054,8 @@
     const m = (c.meetings || []).find(x => x.id === meetingId) || {};
     const when = [m.followUpDate, m.nextStep].filter(Boolean).join(' · ');
     sheet(`<div class="sheet-top"><h3>✅ Saved to ${esc(c.client.name)}'s farm</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div>
+      ${FU.activityOf(m) === 'present' ? '<div class="checks">🔁 Added to <b>Follow-ups</b>: Day 1 to Day 5 follow-up plan starts tomorrow.</div>' : ''}
+      ${FU.activityOf(m) === 'close' && FU.kindOf(c) === 'prospect' ? '<button class="btn primary block" id="nxClient" style="margin-bottom:10px">⭐ Move to Existing Clients</button>' : ''}
       <p>Also update:</p>
       <div style="display:flex;flex-direction:column;gap:8px">
         ${m.nextStep || m.followUpDate
@@ -1047,6 +1065,7 @@
         <a class="btn block nx" target="_blank" rel="noopener" href="${esc(FU.dinglianLink(settings.crmUrl, c.client.name))}">🤝 Update 定联: Open / Present / Close or remark</a>
         <button class="btn ghost block" data-close>Done</button>
       </div>`);
+    const mv = $('#nxClient'); if (mv) mv.onclick = () => { closeSheet(); setKind(c, 'client'); };
   }
 
   /* ---------- the agent's own profile (on every follow-up PDF) ---------- */
@@ -1158,8 +1177,15 @@
     /* the report box shows the agent's own edits if any, otherwise the report built from today's visits */
     const shown = () => (typeof r.edited === 'string' ? r.edited : text());
     const touch = () => { r.updated = new Date().toISOString(); reports[date] = r; saveReports(); const b = $('#rTxt'); if (b && typeof r.edited !== 'string') b.value = text(); };
-    app.innerHTML = bar('三访 report', '#/', `<input type="date" id="dPick" class="datepick" value="${date}" max="${todayISO()}" aria-label="Pick a day">`) + `<div class="wrap">
-      <div class="card"><h2>Met on ${esc(date)} (${metN}/3)</h2>
+    const st = FU.streak(days, date), T = settings.targets || FU.TARGETS;
+    const past = Array.from({length: 14}, (_, i) => FU.addDays(date === todayISO() ? date : todayISO(), -i)).filter(d => (days[d] && days[d].met) || (reports[d] && reports[d].done));
+    app.innerHTML = bar('三访', '#/', `<input type="date" id="dPick" class="datepick" value="${date}" max="${todayISO()}" aria-label="Pick a day">`) + `<div class="wrap">
+      <div class="card sanfang"><div class="sf-top"><div><h2>${date === todayISO() ? '三访 today' : '三访 ' + esc(date)}</h2><b class="sf-n">${metN}<small>/3</small></b></div>
+        <div class="sf-dots">${[0, 1, 2].map(i => `<i class="${metN > i ? 'on' : ''}"></i>`).join('')}</div></div>
+        <p class="muted">This week V ${w.met}/${T.week} · R ${w.rec}/${T.recruit} · month ${mo.met}/${T.month}${st ? ` · 🔥 ${st} day${st > 1 ? 's' : ''} in a row` : ''}</p>
+        ${(session() || {}).owner ? '<a class="btn block" href="#/team" style="margin-top:8px">👥 Team 三访 (leader view)</a>' : ''}</div>
+      <p class="muted" style="margin:0 2px 10px">Only face-to-face visits count here. WhatsApp or call follow-ups are in Activities.</p>
+      <div class="card"><h2>Visits on ${esc(date)} (${metN}/3)</h2>
         ${items.length ? items.map(({c, m}, i) => `<button type="button" class="item" data-visit="${i}"><div class="t"><b>${esc(c.client.name)}</b><span>${esc(FU.timeLabel(m.time) || 'time?')} · ${esc((m.tags && m.tags.length ? m.tags : FU.tagsFor(m.type)).join(','))} · ${esc(FU.typeLabel(m.type))}</span><span>${esc(FU.noteFor(m) || 'Tap to add a report note')}</span></div><div class="amt">${m.outcome === 'closed' || m.type === 'closing' ? '🎉' : '✎'}</div></button>`).join('') : '<p class="muted">No meetings recorded for this day yet.</p>'}
         <button class="btn block" id="quickAdd">+ Add someone I met (quick log)</button></div>
       <div class="card"><h2>💡 Reflection</h2><div class="f"><textarea id="rRef" rows="3" placeholder="What went well, what to improve…">${esc(r.reflection)}</textarea></div>
@@ -1172,9 +1198,10 @@
         <textarea class="rpt" id="rTxt" rows="16"></textarea>
         <div id="rEdited" ${typeof r.edited === 'string' ? '' : 'hidden'} class="flagnote"><span>You edited the report, so new visits won't be added to it automatically.</span><button type="button" id="rReset">Undo my edits</button></div>
         <p class="muted">Use 称呼 only. Client details stay in your farm, not in the group.</p>
+        <button class="btn primary block" id="rCopy">Copy report for WhatsApp</button>
         <label class="chk"><input type="checkbox" id="rShare" ${settings.shareTally !== false ? 'checked' : ''}> Share my numbers with my leader (counts only, no client names)</label></div>
-    </div>
-    <div class="dock"><button class="btn primary" id="rCopy">Copy report for WhatsApp</button></div>`;
+      ${past.length ? `<div class="card"><h2>Past 三访 (14 days)</h2>${past.map(d => `<a class="item" href="#/day/${d}"><div class="t"><b>${esc(d.slice(8, 10) + '/' + d.slice(5, 7))} ${esc(new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', {weekday: 'short', timeZone: 'UTC'}))}</b><span>${reports[d] && reports[d].done ? 'Report copied ✓' : 'No report copied'}</span></div><div class="amt">${(days[d] || {met: 0}).met}/3</div></a>`).join('')}</div>` : ''}
+    </div>${tabbar('day')}`;
     $('#rTxt').value = shown();
     $('#rTxt').addEventListener('input', e => { r.edited = e.target.value; $('#rEdited').hidden = false; r.updated = new Date().toISOString(); reports[date] = r; saveReports(); });
     $('#rReset').onclick = async () => {
@@ -1219,32 +1246,36 @@
   }
 
   /* quick log for someone met without a voice note */
-  function quickAdd(date) {
-    const qTags = ['O'];
+  function quickAdd(date, presetType) {
+    const qTags = FU.tagsFor(presetType || 'fact_find');
+    let qKind = 'prospect';
     const now = new Date(), nowT = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
     const el = sheet(`<div class="sheet-top"><h3>Quick log</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div>
-      <p class="muted">For someone you met but didn't record. It is saved to their farm.</p>
-      <div class="f"><label>Client</label><select id="qWho"><option value="">New client…</option>${cases.filter(x => !x.sample).sort((a, b) => a.client.name.localeCompare(b.client.name)).map(x => `<option value="${x.id}">${esc(x.client.name)}${x.client.nickname ? ' (' + esc(x.client.nickname) + ')' : ''}</option>`).join('')}</select></div>
-      <div class="f" id="qNewF"><label>Name (称呼)</label><input id="qName" placeholder="e.g. Ah Seng"></div>
-      <div class="grid2"><div class="f"><label>Type</label><select id="qType">${FU.MEETING_TYPES.map(t => `<option value="${t.id}">${t.zh} · ${t.en}</option>`).join('')}</select></div>
+      <p class="muted">For an activity you didn't record by voice. It is saved to their farm.</p>
+      <div class="f"><label>Who</label><select id="qWho"><option value="">New person…</option>${cases.filter(x => !x.sample).sort((a, b) => a.client.name.localeCompare(b.client.name)).map(x => `<option value="${x.id}">${esc(x.client.name)}${x.client.nickname ? ' (' + esc(x.client.nickname) + ')' : ''}</option>`).join('')}</select></div>
+      <div id="qNewF"><div class="f"><label>Name (称呼)</label><input id="qName" placeholder="e.g. Ah Seng"></div>
+        <div class="seg" id="qKind"><button type="button" data-k="prospect" aria-pressed="true">🌱 Prospect</button><button type="button" data-k="client" aria-pressed="false">⭐ Existing client</button></div></div>
+      <div class="grid2"><div class="f"><label>Type</label><select id="qType">${FU.MEETING_TYPES.map(t => `<option value="${t.id}" ${t.id === (presetType || 'fact_find') ? 'selected' : ''}>${t.zh} · ${t.en}</option>`).join('')}</select></div>
       <div class="f"><label>Result</label><select id="qOut"><option value="none">No decision yet</option><option value="considering">Considering</option><option value="closed">Closed 🎉</option><option value="not_interested">Not interested</option></select></div></div>
       <div class="grid2"><div class="f"><label>Time</label><input id="qTime" type="time" value="${date === todayISO() ? nowT : ''}"></div><div class="f"><label>P / O / R</label>${tagButtons(qTags)}</div></div>
-      <div class="f"><label>Report note (what the group sees)</label><textarea id="qNote" rows="3" placeholder="e.g. Direct approach, open for review and do CFF."></textarea></div>
+      <label class="chk"><input type="checkbox" id="qVisit" checked> Face-to-face visit (counts for 三访)</label>
+      <div class="f"><label>Notes / report note</label><textarea id="qNote" rows="3" placeholder="e.g. Direct approach, open for review and do CFF."></textarea></div>
       <div class="grid2"><div class="f"><label>Next step (optional)</label><input id="qNext"></div><div class="f"><label>Follow up on</label><input id="qDate" type="date"></div></div>
       <div class="row"><button class="btn" data-close>Cancel</button><button class="btn primary" id="qSave">Save</button></div>`);
     wireTags(el, qTags);
     $('#qType', el).onchange = e => { qTags.splice(0, qTags.length, ...FU.tagsFor(e.target.value)); $$('[data-tg]', el).forEach(b => b.setAttribute('aria-pressed', qTags.includes(b.dataset.tg))); };
     $('#qWho', el).onchange = e => { $('#qNewF', el).hidden = !!e.target.value; };
+    $$('#qKind button', el).forEach(b => b.onclick = () => { qKind = b.dataset.k; $$('#qKind button', el).forEach(x => x.setAttribute('aria-pressed', x === b)); });
     $('#qSave', el).onclick = () => {
       let c = getCase($('#qWho', el).value);
       if (!c) {
         const name = $('#qName', el).value.trim(); if (!name) return $('#qName', el).classList.add('flag');
         const now = new Date().toISOString();
-        c = {id: PS.uid(), created: now, updated: now, client: {name, nickname: '', age: null, income: null}, guide: Object.assign({}, settings.guide), policies: [], meetings: []};
+        c = {id: PS.uid(), created: now, updated: now, kind: qKind, client: {name, nickname: '', age: null, income: null}, guide: Object.assign({}, settings.guide), policies: [], meetings: []};
         cases.push(c);
       }
       const d = FU.normalizeDraft({meeting: {type: $('#qType', el).value, outcome: $('#qOut', el).value, nextStep: $('#qNext', el).value, followUpDate: $('#qDate', el).value, summary: 'Quick log'},
-        tags: qTags, time: $('#qTime', el).value, reportNote: $('#qNote', el).value}, []);
+        tags: qTags, time: $('#qTime', el).value, reportNote: $('#qNote', el).value, visit: $('#qVisit', el).checked}, []);
       const qm = FU.applyToFarm(c, d, {date});
       saveCases(); closeSheet(); pendingNext = {caseId: c.id, meetingId: qm.id}; route();
     };
@@ -1291,6 +1322,96 @@
       <p class="muted" style="margin-bottom:8px">Agents' own numbers, sent when they copy their 三访 report. No client names.</p>
       ${rows.length ? `<table class="team"><thead><tr><th>Agent</th><th>Today</th><th>Week</th><th>Days 3+</th><th>🔥</th><th>🎉</th></tr></thead><tbody>${rows.map(x => `<tr><td><b>${esc(x.name)}</b><span>last report ${esc(x.last)}</span></td><td class="${x.today >= 3 ? 'ok' : ''}">${x.today}/3</td><td>${x.week}</td><td>${x.hit}</td><td>${x.streak || ''}</td><td>${x.closed || ''}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">No reports yet. Numbers appear when agents tap "Copy report for WhatsApp".</p>'}
     </div>`;
+  }
+
+  /* ======================= sections: bottom bar, Activities, Follow-ups ======================= */
+  function tabbar(active) {
+    const t = todayISO(), att = FU.followList(cases, t).filter(x => x.t.attention).length;
+    const vis = (FU.dayStats(cases)[t] || {met: 0}).met;
+    const items = [['home', '#/', '🏠', 'Home', ''], ['activity', '#/activity', '📋', 'Activities', ''],
+      ['followups', '#/followups', '🔁', 'Follow-ups', att ? `<i class="badge">${att}</i>` : ''], ['day', '#/day', '3️⃣', '三访', `<i class="badge soft">${vis}/3</i>`]];
+    return `<nav class="tabbar">${items.map(([k, href, ic, label, badge]) => `<a href="${href}" class="${k === active ? 'on' : ''}"><span>${ic}${badge}</span>${label}</a>`).join('')}</nav>`;
+  }
+  function followCard() {
+    const list = FU.followList(cases, todayISO()), att = list.filter(x => x.t.attention);
+    if (!list.length) return '';
+    return `<a class="card fcard" href="#/followups"><div><b>🔁 ${list.length} in follow-up after presenting</b><span>${att.length ? `<em>${att.length} need${att.length === 1 ? 's' : ''} attention</em>: ${esc(att.slice(0, 3).map(x => x.c.client.name).join(', '))}${att.length > 3 ? '…' : ''}` : 'All on schedule'}</span></div><span class="go">›</span></a>`;
+  }
+  function setKind(c, kind) {
+    c.kind = kind; c.updated = new Date().toISOString(); saveCases(); save('pspt.homeTab', kind);
+    toast(kind === 'client' ? `${c.client.name} is now an Existing Client ⭐` : `${c.client.name} moved to Prospects`);
+    route();
+  }
+
+  /* ---------- Activities: who was approached / opened / presented / followed up / closed on a day ---------- */
+  function activityScreen(date, cat) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) date = todayISO();
+    const g = FU.activitiesOn(cases, date);
+    cat = FU.ACTIVITIES.some(a => a.id === cat) || cat === 'all' ? cat : (load('pspt.actTab', 'all'));
+    const rows = cat === 'all' ? FU.meetingsOn(cases, date, true) : g[cat] || [];
+    const typeFor = {approach: 'approach', open: 'fact_find', present: 'presentation', follow_up: 'follow_up', close: 'closing'};
+    app.innerHTML = bar('Activities', '#/', `<input type="date" id="aPick" class="datepick" value="${date}" max="${todayISO()}" aria-label="Pick a day">`) + `<div class="wrap">
+      <div class="acttabs">${[['all', 'All', FU.meetingsOn(cases, date, true).length]].concat(FU.ACTIVITIES.map(a => [a.id, a.en, g[a.id].length])).map(([k, l, n]) => `<button type="button" data-cat="${k}" aria-pressed="${cat === k}"><b>${n}</b>${l}</button>`).join('')}</div>
+      <div class="card"><h2>${cat === 'all' ? 'Everything' : esc(FU.ACTIVITIES.find(a => a.id === cat).en)} on ${esc(date)}</h2>
+        ${rows.length ? rows.map(({c, m}) => {
+          const a = FU.activityOf(m), lab = (FU.ACTIVITIES.find(x => x.id === a) || {en: FU.typeLabel(m.type)}).en;
+          return `<a class="item" href="#/case/${c.id}"><div class="t"><b>${esc(c.client.name)} <span class="pill ${FU.kindOf(c) === 'client' ? 'ok' : 'grey'}">${FU.kindOf(c) === 'client' ? 'Client' : 'Prospect'}</span></b><span>${esc(FU.timeLabel(m.time) || '')}${m.time ? ' · ' : ''}${esc(lab)}${m.visit === false ? ' · not a visit' : ''}</span><span>${esc(FU.noteFor(m) || m.summary || '')}</span></div></a>`;
+        }).join('') : '<p class="muted">Nothing recorded.</p>'}
+        <button class="btn block" id="aAdd">+ Add ${cat === 'all' ? 'an activity' : esc(FU.ACTIVITIES.find(a => a.id === cat).en.toLowerCase())}</button></div>
+    </div>${tabbar('activity')}`;
+    $('#aPick').onchange = e => { if (e.target.value) location.hash = '#/activity/' + e.target.value + '/' + cat; };
+    $$('[data-cat]').forEach(b => b.onclick = () => { save('pspt.actTab', b.dataset.cat); location.hash = '#/activity/' + date + '/' + b.dataset.cat; });
+    $('#aAdd').onclick = () => quickAdd(date, typeFor[cat] || '');
+  }
+
+  /* ---------- Follow-ups: everyone presented in the last round, Day 1–5 ---------- */
+  function followScreen() {
+    const t = todayISO(), list = FU.followList(cases, t);
+    app.innerHTML = bar('Follow-ups', '#/') + `<div class="wrap">
+      <p class="muted" style="margin:0 2px 10px">Anyone you present to is listed here automatically. Aim for one follow-up a day for 5 days. They leave the list when they close or you stop tracking.</p>
+      ${list.length ? list.map(({c, t: tr}) => `<div class="card ftrack ${tr.attention ? 'att' : ''}" data-cid="${c.id}">
+        <div class="ft-h"><a href="#/case/${c.id}"><b>${esc(c.client.name)}</b></a><span class="pill ${FU.kindOf(c) === 'client' ? 'ok' : 'grey'}">${FU.kindOf(c) === 'client' ? 'Client' : 'Prospect'}</span></div>
+        <p class="ft-sum">Presented ${esc(tr.presDate)} · <b>Day ${tr.days}</b> · <b>${tr.done}/5</b> follow-ups done</p>
+        ${tr.attention ? `<p class="ft-att">⚠️ ${esc(tr.reasons.join(' · '))}</p>` : ''}
+        <table class="ftable"><thead><tr><th>Stage</th><th>Due</th><th>Follow-up</th></tr></thead><tbody>
+          ${tr.slots.map(s => `<tr class="${s.done ? 'done' : s.late ? 'late' : s.today ? 'due' : ''}"><td>Day ${s.n}</td><td>${esc(s.due.slice(8, 10) + '/' + s.due.slice(5, 7))}</td><td>${s.done ? `✅ ${esc(['First', 'Second', 'Third', 'Fourth', 'Fifth'][s.n - 1])} · ${esc(s.done.date.slice(8, 10) + '/' + s.done.date.slice(5, 7))}${s.done.visit === false ? ' (chat/call)' : ' (met)'}` : s.late ? '⏰ Missed' : s.today ? '👉 Due today' : '—'}</td></tr>`).join('')}
+        </tbody></table>
+        <div class="row" style="margin-top:8px"><button class="btn primary sm" data-flog="${c.id}">✓ Log follow-up</button><button class="btn sm" data-fclose="${c.id}">🎉 Closed</button><button class="btn sm" data-fstop="${c.id}">Stop</button></div>
+      </div>`).join('') : '<div class="empty">Nobody to follow up yet.<br>When you record a <b>Present</b> meeting, the person appears here with a 5-day follow-up plan.</div>'}
+    </div>${tabbar('followups')}`;
+    $$('[data-flog]').forEach(b => b.onclick = () => logFollowUp(getCase(b.dataset.flog)));
+    $$('[data-fclose]').forEach(b => b.onclick = () => markClosed(getCase(b.dataset.fclose)));
+    $$('[data-fstop]').forEach(b => b.onclick = async () => {
+      const c = getCase(b.dataset.fstop);
+      if (!(await confirmBox('Stop tracking ' + esc(c.client.name) + '?', 'They leave the follow-up list. A new presentation puts them back.', 'Stop tracking'))) return;
+      c.fuStop = todayISO(); c.updated = new Date().toISOString(); saveCases(); route();
+    });
+  }
+  function logFollowUp(c) {
+    const now = new Date(), nowT = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    let how = 'whatsapp';
+    const el = sheet(`<div class="sheet-top"><h3>Follow-up: ${esc(c.client.name)}</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div>
+      <div class="seg" id="fHow">${[['whatsapp', 'WhatsApp'], ['call', 'Call'], ['meet', 'Met']].map(([k, l]) => `<button type="button" data-h="${k}" aria-pressed="${k === how}">${l}</button>`).join('')}</div>
+      <div class="grid2"><div class="f"><label>Date</label><input id="fDate" type="date" value="${todayISO()}" max="${todayISO()}"></div><div class="f"><label>Time</label><input id="fTime" type="time" value="${nowT}"></div></div>
+      <div class="f"><label>What happened</label><textarea id="fNote" rows="3" placeholder="e.g. Sent the summary again, he will reply after talking to his wife"></textarea></div>
+      <div class="f"><label>Next step (optional)</label><input id="fNext"></div>
+      <p class="muted">A WhatsApp or call follow-up counts as a follow-up activity, not a 三访 visit. "Met" counts as a visit too.</p>
+      <div class="row"><button class="btn" data-close>Cancel</button><button class="btn primary" id="fSave">Save</button></div>`);
+    $$('#fHow button', el).forEach(b => b.onclick = () => { how = b.dataset.h; $$('#fHow button', el).forEach(x => x.setAttribute('aria-pressed', x === b)); });
+    $('#fSave', el).onclick = () => {
+      const note = $('#fNote', el).value.trim(), label = {whatsapp: 'WhatsApp follow-up', call: 'Call follow-up', meet: 'Met to follow up'}[how];
+      const d = FU.normalizeDraft({meeting: {type: 'follow_up', summary: label + (note ? ': ' + note : ''), nextStep: $('#fNext', el).value, outcome: 'considering'},
+        tags: ['F'], time: $('#fTime', el).value, reportNote: note ? label + '. ' + note : label + '.', visit: how === 'meet'}, []);
+      FU.applyToFarm(c, d, {date: $('#fDate', el).value || todayISO()});
+      saveCases(); closeSheet(); toast('Follow-up logged'); route();
+    };
+  }
+  async function markClosed(c) {
+    if (!(await confirmBox(esc(c.client.name) + ' closed? 🎉', 'A Close activity is logged for today and they leave the follow-up list.' + (FU.kindOf(c) === 'prospect' ? ' They also move to Existing Clients.' : ''), 'Yes, closed'))) return;
+    const now = new Date(), nowT = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    FU.applyToFarm(c, FU.normalizeDraft({meeting: {type: 'closing', summary: 'Closed', outcome: 'closed'}, tags: ['P'], time: nowT, visit: false}, []), {date: todayISO()});
+    if (FU.kindOf(c) === 'prospect') c.kind = 'client';
+    saveCases(); toast('🎉 Congratulations!'); route();
   }
 
   /* ---------- staying signed in ----------
