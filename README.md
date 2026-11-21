@@ -20,7 +20,7 @@ Every client has a farm card: a **Before you meet** brief (last meeting, family 
 ## Sections (bottom bar)
 
 - **🏠 Home:** Record a meeting, the follow-up summary card, and your people split into **⭐ Existing Clients** (policies you manage; their policy summaries live here) and **🌱 Prospects** (people you are approaching or following up). Each person has a bar to move them between the two. When a prospect closes, the app offers to move them to Existing Clients. Older records count as clients if they have policies, otherwise as prospects.
-- **📋 Activities:** pick a day and see, separately, who you **Approached, Opened, Presented, Followed up and Closed**, with time, client/prospect and notes. **+ Add** logs an activity (date, name, type, notes) without recording.
+- **📋 Activities:** pick a day and see, separately, who you **Approached, Opened, Presented, Followed up and Closed**, with time, client/prospect and notes. **+ Add** logs an activity (date, name, type, notes) without recording. A person is copied forward to every stage they reached: an approach that got an appointment (O) also shows under Open, an Open that went to a presentation (P) also under Present, and a presentation or follow-up that closed also under Close. Each name appears only once per list.
 - **🔁 Follow-ups:** everyone you present to is listed automatically with a Day 1 to Day 5 table (First to Fifth follow-up), days since the presentation, follow-ups done (x/5), and a red flag when someone is behind or has had no follow-up for 3 days. **Log follow-up** (WhatsApp, call or met), **Closed** or **Stop**. A new presentation starts the plan again.
 - **3️⃣ 三访:** only face-to-face visits: today's count, V / R / month, the report, and the last 14 days. WhatsApp or call follow-ups count as activities but not as 三访 visits (untick "Face-to-face visit" when logging).
 
@@ -34,8 +34,7 @@ The home screen shows **三访 today** (people met out of 3) and this week's V a
 
 1. In the evening tap **📋 Daily review & report**. Today's visits are listed in time order.
 2. Met someone you didn't record? Tap **+ Add someone I met (quick log)** with type (including 了解需求 / Open and 招募 Recruitment), time, O/F/P/R and note. Choosing a type ticks the usual tag.
-3. Optional: type or speak a reflection and tomorrow's plan; they are added at the end.
-4. The report is in an editable box: change anything, then tap **Copy report for WhatsApp** and paste it in the group. Your edits are kept; **Undo my edits** rebuilds it from the day's visits. Tick **Hide client names** to show Client A, B, C.
+3. The report is in an editable box: change anything, then tap **Copy report for WhatsApp** and paste it in the group. Your edits are kept; **Undo my edits** rebuilds it from the day's visits. Tick **Hide client names** to show Client A, B, C.
 
 The report follows the team format:
 
@@ -55,6 +54,20 @@ Direct approach, …
 ```
 
 Set your report name, base, opening line and the three targets in Settings → 👤 My profile. Defaults: V 18 a week, R 6 a week, Total 72 a month.
+
+**Your own headline and end line:** on the 三访 screen tap **✏️ Headline & end line**. The headline replaces the name and opening lines; the end line goes at the bottom of every report. Both can be several lines and can use `{name}`, `{base}`, `{date}` and `{day}`. If the headline has `{date}`, the separate date line is left out. **Reset** goes back to the team format.
+
+## REDEFINE Calendar link
+
+Connect once per device: Settings → **📅 Connect REDEFINE Calendar**, with the same team code, name and PIN you use in the Calendar.
+
+- In a quick log, fill **Next appointment** (date and time). Saving puts a private 1-hour event in your Calendar ("Present 陈先生", "Follow up 陈先生" …) and the next-step screen shows ✅ In your REDEFINE Calendar.
+- After the meeting, tap **✓ Done** or **💰 Closed** on that event in the Calendar. Next time On Field is opened (or within a minute if it is open), the visit is logged by itself in the farm, Activities and the 三访 report, with a toast. ✕ Didn't happen logs nothing. If you move the event in the Calendar, the new time is kept.
+- Only the appointment title and time go to the Calendar. Disconnect any time in Settings; events already in the Calendar stay.
+
+## After a close
+
+When someone closes (logged here, from Follow-ups, or as 💰 Closed in the Calendar), the app shows the REDEFINE service steps, and their page keeps a checklist until each is ticked: **policy summary** done, **referrals** asked (opens REDEFINE Prospecting), **nominee** form (opens REDEFINE Form Filler), **e-Connect** set up for the client.
 
 If **Share my numbers with my leader** is on (default), only the counts go to the team server. No client names.
 
@@ -128,7 +141,7 @@ Clients are locked with your passphrase before they leave the device. The server
 ## For maintenance
 
 - `docs/` is the app. `logic.js` handles recognition and calculations, `report.js` builds the PDF pages, `app.js` runs the screens, and `config.js` holds the server address.
-- `node test.js` runs 123 checks covering recognition, messy numbers, the never-guess rules and the summary maths.
+- `node test.js` runs 144 checks covering recognition, messy numbers, the never-guess rules, the summary maths, the 三访 report, activity stages and the Calendar link.
 - `node serve.js` previews the app at http://localhost:5193.
 - `samples/` holds the sample PDF made by the app.
 - `node test-sync-server.js` runs the real team server code in memory on port 5194 to test sync (open localhost:5194 and 127.0.0.1:5194 as two devices; team code `test-team-code`).

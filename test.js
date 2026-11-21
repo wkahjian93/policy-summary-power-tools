@@ -264,6 +264,35 @@ console.log('Clients vs prospects, activities, follow-up tracker');
   eq('AI visit flag: false only when said', [FU.normalizeDraft({visit: false}, []).visit, FU.normalizeDraft({}, []).visit], [false, true]);
 }
 
+console.log('Stages copy forward, headline/end line, Calendar link');
+{
+  const FU = require('./docs/followup.js');
+  const M = (id, type, extra) => Object.assign({id, date: '2026-11-21', time: '10:00', type, outcome: 'none', tags: FU.tagsFor(type)}, extra || {});
+  eq('approach alone: Approach only', FU.stagesOf(M('1', 'approach')), ['approach']);
+  eq('approach that made an appointment (O): Approach + Open', FU.stagesOf(M('1', 'approach', {tags: ['O']})), ['approach', 'open']);
+  eq('open that presented (P): Open + Present', FU.stagesOf(M('1', 'fact_find', {tags: ['O', 'P']})), ['open', 'present']);
+  eq('presentation that closed: Present + Close', FU.stagesOf(M('1', 'presentation', {outcome: 'closed'})), ['present', 'close']);
+  eq('follow-up that closed: Follow-up + Close', FU.stagesOf(M('1', 'follow_up', {outcome: 'closed'})), ['follow_up', 'close']);
+  eq('closing meeting: Close only (not Present)', FU.stagesOf(M('1', 'closing', {tags: ['P'], outcome: 'closed'})), ['close']);
+  const people = [{id: 'a', client: {name: 'A'}, meetings: [M('a1', 'approach', {tags: ['O']}), M('a2', 'approach', {time: '15:00'})]}];
+  const g = FU.activitiesOn(people, '2026-11-21');
+  eq('same person twice on one list -> listed once', [g.approach.length, g.open.length], [1, 1]);
+  const items = [{name: 'Ms Koay', time: '09:00', tags: ['P'], note: 'Direct approach.'}];
+  const txt = FU.reportText({date: '2026-11-13', reportName: 'Rex👑', base: 'SG Farlim', items, week: {met: 1, rec: 0}, month: {met: 1},
+    headline: '🔥 {name} ({base}) 🔥\n三访打卡！{date} {day}', endLine: '加油！明天继续 💪 — {name}'});
+  eq('custom headline replaces the first lines', txt.split('\n').slice(0, 2), ['🔥 Rex👑 (SG Farlim) 🔥', '三访打卡！13/11/2026 Friday']);
+  eq('headline with {date} does not repeat the date line', txt.split('\n').filter(l => l.includes('13/11/2026')).length, 1);
+  eq('headline without {date} keeps the date line', FU.reportText({date: '2026-11-13', reportName: 'Rex', items: [], headline: 'Hi {name}'}).split('\n').slice(0, 3), ['Hi Rex', '', '13/11/2026 (Friday)']);
+  eq('custom end line at the bottom', txt.split('\n').slice(-1)[0], '加油！明天继续 💪 — Rex👑');
+  eq('empty base leaves no empty brackets', FU.reportText({date: '2026-11-13', reportName: 'Rex', items: [], headline: '{name} ({base})'}).split('\n')[0], 'Rex');
+  const ev = FU.calEventFor({date: '2026-11-25', time: '14:30', name: '陈先生', fromType: 'presentation', nextStep: 'Bring the revised plan'});
+  eq('quick log appointment -> private Calendar follow-up event', [ev.title, ev.type, ev.vis, new Date(ev.start).getHours(), (new Date(ev.end) - new Date(ev.start)) / 60000], ['Follow up 陈先生', 'followup', 'private', 14, 60]);
+  eq('after an approach/open the appointment is a presentation', FU.calEventFor({date: '2026-11-25', name: 'X', fromType: 'fact_find'}).type, 'present');
+  const back = FU.eventToMeeting({id: 'ev123', type: 'followup', out: 'closed', start: new Date('2026-11-25T14:30:00').toISOString()}, {});
+  eq('Calendar Closed -> On Field visit, closed, stable id', [back.id, back.date, back.time, back.type, back.outcome, back.visit, FU.stagesOf(back)], ['cal-ev123', '2026-11-25', '14:30', 'follow_up', 'closed', true, ['follow_up', 'close']]);
+  eq('after-close checklist has 4 items', FU.AFTER_CLOSE.map(x => x.k), ['summary', 'referral', 'nominee', 'econnect']);
+}
+
 console.log('Summary maths (sample client)');
 const c = sampleCase(PS), s = PS.summarise(c);
 eq('death = 300k + 100k + 200k (lapsed 50k not counted)', s.cats.death.total, 600000);

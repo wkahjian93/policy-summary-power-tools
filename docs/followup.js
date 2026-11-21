@@ -20,6 +20,18 @@
     if (m.type === 'closing' || m.outcome === 'closed') return 'close';
     return {approach: 'approach', fact_find: 'open', presentation: 'present', follow_up: 'follow_up'}[m.type] || 'other';
   }
+  /* every stage one meeting reached: the meeting's own type, plus what it led to (tags O/P/F, or a close) */
+  function stagesOf(m) {
+    const t = m.tags || [], s = [];
+    const add = x => { if (!s.includes(x)) s.push(x); };
+    if (m.type === 'approach') add('approach');
+    if (m.type === 'fact_find' || (m.type === 'approach' && t.includes('O'))) add('open');
+    if (m.type === 'presentation' || (t.includes('P') && ['approach', 'fact_find', 'follow_up'].includes(m.type))) add('present');
+    if (m.type === 'follow_up' || (t.includes('F') && m.type !== 'closing')) add('follow_up');
+    if (m.type === 'closing' || m.outcome === 'closed') add('close');
+    if (!s.length) add('other');
+    return s;
+  }
   /* existing client (policies we manage) or prospect; older records decide by whether policies were added */
   const kindOf = c => c.kind || ((c.policies || []).length ? 'client' : 'prospect');
   /* a face-to-face 三访 visit (a WhatsApp/call follow-up is a sales activity but not a visit) */
@@ -47,7 +59,7 @@
     {k: 'next', zh: '下一步跟他约了什么？', en: 'What next move did you arrange?'}
   ];
   const TAGS = ['O', 'F', 'P', 'R'];   // O = appointment made, F = follow up, P = presentation, R = recruitment activity
-  const tagsFor = type => ({presentation: ['P'], closing: ['P'], follow_up: ['F'], recruitment: ['R']})[type] || ['O'];   // approach, open, service, other -> O
+  const tagsFor = type => ({approach: [], presentation: ['P'], closing: ['P'], follow_up: ['F'], recruitment: ['R']})[type] || ['O'];   // approach: no appointment yet (tick O when one is made)   // approach, open, service, other -> O
 
   function hintFor(clientName) { return (clientName ? 'Client: ' + clientName + '. ' : '') + HINT; }
 
@@ -166,7 +178,12 @@
   /* the Activities section: who was approached / opened / presented / followed up / closed on a day */
   function activitiesOn(cases, date) {
     const g = {approach: [], open: [], present: [], follow_up: [], close: [], other: []};
-    meetingsOn(cases, date, true).forEach(x => g[activityOf(x.m)].push(x));
+    /* one meeting can reach several stages (approached and got an appointment = Approach + Open; presented and closed = Present + Close);
+       each person appears once per list even if met twice that day */
+    const seen = {};
+    meetingsOn(cases, date, true).forEach(x => stagesOf(x.m).forEach(s => {
+      const k = s + '|' + x.c.id; if (seen[k]) return; seen[k] = 1; g[s].push(x);
+    }));
     return g;
   }
 
@@ -251,9 +268,15 @@
     const wd = WEEKDAY[new Date(o.date + 'T00:00:00Z').getUTCDay()];
     const head = (o.reportName || o.agentName || '') + (o.base ? ' (' + o.base + ')' : '');
     const lines = [];
-    if (head.trim()) lines.push(head.trim());
-    lines.push(o.opening == null ? '以愉快的心情与大家一起修练三访。' : o.opening);
-    lines.push('', `${d}/${mo}/${y} (${wd})`, '');
+    const fill = s => String(s).replace(/\{name\}/g, o.reportName || o.agentName || '').replace(/\{base\}/g, o.base || '')
+      .replace(/\{date\}/g, `${d}/${mo}/${y}`).replace(/\{day\}/g, wd).replace(/\(\s*\)/g, '').replace(/[ \t]+\n/g, '\n');
+    if (typeof o.headline === 'string' && o.headline.trim()) lines.push(fill(o.headline).trim());   // the agent's own headline (lines before the date)
+    else {
+      if (head.trim()) lines.push(head.trim());
+      lines.push(o.opening == null ? '以愉快的心情与大家一起修练三访。' : o.opening);
+    }
+    if (typeof o.headline === 'string' && /\{date\}/.test(o.headline)) lines.push('');   // the headline already shows the date
+    else lines.push('', `${d}/${mo}/${y} (${wd})`, '');
     const w = o.week || {met: 0, rec: 0}, m = o.month || {met: 0};
     lines.push(`V: ${pad2(w.met)}/${pad2(T.week)}`, `R: ${pad2(w.rec || 0)}/${pad2(T.recruit)}`, `Total: ${pad2(m.met)}/${pad2(T.month)}`);
     o.items.forEach((it, i) => {
@@ -265,6 +288,7 @@
     if (!o.items.length) lines.push('', '(今天还没有记录见面)');
     if (o.reflection) lines.push('', '💡 ' + o.reflection.trim());
     if (o.tomorrow) lines.push('🎯 ' + o.tomorrow.trim());
+    if (typeof o.endLine === 'string' && o.endLine.trim()) lines.push('', fill(o.endLine).trim());   // the agent's own closing line(s)
     return lines.join('\n').trim();
   }
   /* ---------- two devices edited the same client: keep both sides' work ----------
@@ -342,6 +366,38 @@
     return {changed, created};
   }
 
+  /* ---------- after a close: the REDEFINE service checklist ---------- */
+  const AFTER_CLOSE = [
+    {k: 'summary', label: 'Policy summary done', hint: 'Add their policies and send the summary PDF'},
+    {k: 'referral', label: 'Asked for referrals', hint: 'Log the referral page in REDEFINE Prospecting', url: 'https://wkahjian93.github.io/redefine-referrals-tracker/'},
+    {k: 'nominee', label: 'Nominee form done', hint: 'Fill it in REDEFINE Form Filler', url: 'https://wkahjian93.github.io/redefine-form-filler/'},
+    {k: 'econnect', label: 'e-Connect set up for the client', hint: 'Help them register and log in to Great Eastern e-Connect'}
+  ];
+
+  /* ---------- REDEFINE Calendar link: appointment from a quick log -> Calendar event; Calendar Done -> On Field visit ---------- */
+  const CAL_API = 'https://script.google.com/macros/s/AKfycbxNFMDYdHCtNvvK8w99FdPaStvhqU0Lb8Zi-qmQH0XwXarXZ-3UmAu75GODSoswU80/exec';
+  const NEXT_CAL_TYPE = {approach: 'present', fact_find: 'present', presentation: 'followup', follow_up: 'followup', closing: 'service', recruitment: 'recruit', service: 'service'};
+  const CAL_TO_TYPE = {approach: 'approach', open: 'fact_find', present: 'presentation', followup: 'follow_up', close: 'closing', recruit: 'recruitment', service: 'service', crm: 'service', joinfield: 'follow_up'};
+  /* local date + HH:MM (Malaysia time on the phone) -> the Calendar's event */
+  function calEventFor(o) {
+    const start = new Date(o.date + 'T' + (o.time || '10:00') + ':00');
+    const type = o.calType || NEXT_CAL_TYPE[o.fromType] || 'followup';
+    const verb = {present: 'Present', followup: 'Follow up', recruit: 'Recruit chat', service: 'Service'}[type] || 'Meet';
+    return {title: (verb + ' ' + (o.name || '')).trim(), type, start: start.toISOString(), end: new Date(start.getTime() + 3600e3).toISOString(), allDay: false,
+      place: o.place || '', notes: ((o.nextStep ? o.nextStep + ' · ' : '') + '(from REDEFINE On Field)').slice(0, 1500), vis: 'private', with: [], remind: '30'};
+  }
+  /* a Calendar event marked Done / Closed -> the visit to log in On Field (stable id, so several devices never log it twice) */
+  function eventToMeeting(e, appt) {
+    const s = new Date(e.start), pad = n => String(n).padStart(2, '0');
+    const date = s.getFullYear() + '-' + pad(s.getMonth() + 1) + '-' + pad(s.getDate()), time = pad(s.getHours()) + ':' + pad(s.getMinutes());
+    const closed = e.out === 'closed';
+    const type = CAL_TO_TYPE[e.type] || CAL_TO_TYPE[appt && appt.calType] || 'follow_up';
+    const tags = tagsFor(type).slice();
+    const label = {approach: 'Approach', fact_find: 'Open', presentation: 'Presentation', follow_up: 'Follow-up', service: 'Service', recruitment: 'Recruitment'}[type] || 'Meeting';
+    return {id: 'cal-' + e.id, date, time, type, outcome: closed ? 'closed' : 'none', visit: true, tags, calEventId: e.id, concepts: [], qa: {}, sentPdf: false,
+      summary: label + ' done (from REDEFINE Calendar)' + (closed ? ' · closed 🎉' : ''), reportNote: label + ' done' + (closed ? ', closed.' : '.'), nextStep: '', followUpDate: ''};
+  }
+
   /* links into the other REDEFINE apps */
   const CAL_URL = 'https://wkahjian93.github.io/redefine-calendar/', CRM_URL = 'https://remembered.dwz-rooms-server.workers.dev/';
   function calendarLink(base, o) {
@@ -364,7 +420,7 @@
     return bits.join(' ');
   }
 
-  const api = {ACTIVITIES, activityOf, kindOf, isVisit, activitiesOn, followTrack, followList, FU_STEPS, daysBetween, mergeCase, markRemoved, CAL_URL, CRM_URL, calendarLink, dinglianLink, TARGET, TARGETS, QUESTIONS, TAGS, tagsFor, meetingsOn, dayStats, streak, weekStats, monthStats, timeLabel, noteFor, reportText, addDays,
+  const api = {stagesOf, AFTER_CLOSE, calEventFor, eventToMeeting, CAL_API, ACTIVITIES, activityOf, kindOf, isVisit, activitiesOn, followTrack, followList, FU_STEPS, daysBetween, mergeCase, markRemoved, CAL_URL, CRM_URL, calendarLink, dinglianLink, TARGET, TARGETS, QUESTIONS, TAGS, tagsFor, meetingsOn, dayStats, streak, weekStats, monthStats, timeLabel, noteFor, reportText, addDays,
     MEETING_TYPES, LANGS, HINT, hintFor, buildPrompt, normalizeDraft, scrub, matchClient, applyToFarm, brief, typeLabel, applyProspecting, PROSPECTING_URL};
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FU = api;
 })(this);

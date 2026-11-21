@@ -162,6 +162,7 @@
     app.innerHTML = bar(c.client.name || 'Client', '#/', `<button class="ib" id="del" aria-label="Delete client">${ICONS.trash}</button>`) + `
       <div class="wrap">
         <div class="kindbar ${kind}"><span>${kind === 'client' ? '⭐ Existing client' : '🌱 Prospect'}</span><button type="button" class="btn sm" id="kindSw">${kind === 'client' ? 'Move to Prospects' : 'Move to Existing Clients'}</button></div>
+        ${afterCloseCard(c)}
         ${kind === 'client' ? '' : farmCard(c)}
         ${kind === 'client' ? '' : `<details class="polwrap" ${c.policies.length ? 'open' : ''}><summary><b>Their current policies</b> <span class="muted">(optional review before they become a client)</span></summary>`}
         <h2 class="muted" style="margin:14px 2px 8px;font-weight:600">POLICY SUMMARY</h2>
@@ -198,6 +199,7 @@
     $('#key').onclick = () => { location.hash = '#/case/' + c.id + '/policy/new'; };
     wireFarm(c);
     $('#kindSw').onclick = () => setKind(c, kind === 'client' ? 'prospect' : 'client');
+    wireAfterClose(c);
     $('#addP').onclick = () => { if (!tray || tray.caseId !== c.id) { clearTray(); tray = {caseId: c.id, items: [], notes: []}; } showTray(c); };
     $('#snap').onclick = () => $('#camIn').click();
     $('#pics').onclick = () => $('#file').click();
@@ -1096,9 +1098,12 @@
     sheet(`<div class="sheet-top"><h3>✅ Saved to ${esc(c.client.name)}'s farm</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div>
       ${FU.activityOf(m) === 'present' ? '<div class="checks">🔁 Added to <b>Follow-ups</b>: Day 1 to Day 5 follow-up plan starts tomorrow.</div>' : ''}
       ${FU.activityOf(m) === 'close' && FU.kindOf(c) === 'prospect' ? '<button class="btn primary block" id="nxClient" style="margin-bottom:10px">⭐ Move to Existing Clients</button>' : ''}
+      ${FU.activityOf(m) === 'close' ? `<div class="checks">🎉 <b>Next for ${esc(c.client.name)}:</b> ${FU.AFTER_CLOSE.map(x => esc(x.label.toLowerCase())).join(', ')}. The checklist is on their page.</div>` : ''}
       <p>Also update:</p>
       <div style="display:flex;flex-direction:column;gap:8px">
-        ${m.nextStep || m.followUpDate
+        ${(c.appts || []).some(a => a.fromId === m.id)
+          ? (a => `<div class="checks ok-box">✅ In your REDEFINE Calendar: <b>${esc(a.title)}</b>, ${esc(a.date.slice(8, 10) + '/' + a.date.slice(5, 7))} ${esc(FU.timeLabel(a.time))}. Tap ✓ Done there after the meeting and it comes back here.</div>`)((c.appts || []).find(a => a.fromId === m.id))
+          : m.nextStep || m.followUpDate
           ? `<a class="btn primary block nx" target="_blank" rel="noopener" href="${esc(FU.calendarLink(settings.calendarUrl, {name: c.client.name, nextStep: m.nextStep, followUpDate: m.followUpDate}))}">📅 Add follow-up to REDEFINE Calendar</a>
              <p class="muted" style="margin:-4px 0 4px">Opens a new event: Follow up ${esc(c.client.name)}${when ? ' · ' + esc(when) : ''}. Check the time, then tap Add.</p>`
           : '<p class="muted">No follow-up date or next step yet, so there is nothing for the Calendar.</p>'}
@@ -1212,7 +1217,7 @@
     const days = FU.dayStats(cases), w = FU.weekStats(days, date), mo = FU.monthStats(days, date);
     const metN = new Set(items.map(x => x.c.id)).size;
     const text = () => FU.reportText({date, agentName: settings.name, reportName: settings.reportName, base: settings.base, opening: settings.reportOpening,
-      targets: settings.targets, hideNames: r.hideNames, week: w, month: mo, reflection: r.reflection, tomorrow: r.tomorrow,
+      targets: settings.targets, hideNames: r.hideNames, week: w, month: mo, headline: settings.reportHead, endLine: settings.reportEnd,
       items: items.map(({c, m}) => ({name: c.client.name, time: m.time, tags: m.tags && m.tags.length ? m.tags : FU.tagsFor(m.type), note: FU.noteFor(m)}))});
     /* the report box shows the agent's own edits if any, otherwise the report built from today's visits */
     const shown = () => (typeof r.edited === 'string' ? r.edited : text());
@@ -1228,10 +1233,7 @@
       <div class="card"><h2>Visits on ${esc(date)} (${metN}/3)</h2>
         ${items.length ? items.map(({c, m}, i) => `<button type="button" class="item" data-visit="${i}"><div class="t"><b>${esc(c.client.name)}</b><span>${esc(FU.timeLabel(m.time) || 'time?')} · ${esc((m.tags && m.tags.length ? m.tags : FU.tagsFor(m.type)).join(','))} · ${esc(FU.typeLabel(m.type))}</span><span>${esc(FU.noteFor(m) || 'Tap to add a report note')}</span></div><div class="amt">${m.outcome === 'closed' || m.type === 'closing' ? '🎉' : '✎'}</div></button>`).join('') : '<p class="muted">No meetings recorded for this day yet.</p>'}
         <button class="btn block" id="quickAdd">+ Add someone I met (quick log)</button></div>
-      <div class="card"><h2>💡 Reflection</h2><div class="f"><textarea id="rRef" rows="3" placeholder="What went well, what to improve…">${esc(r.reflection)}</textarea></div>
-        <h2 style="margin-top:6px">🎯 Tomorrow</h2><div class="f"><textarea id="rTom" rows="2" placeholder="Who you will meet, what you will do…">${esc(r.tomorrow)}</textarea></div>
-        <button class="btn sm" id="rMic">🎙 Speak into the box</button> <span class="muted" id="rMicT">Tap a box first, then speak.</span></div>
-      <div class="card"><h2>Report for the WhatsApp group</h2>
+      <div class="card"><div class="farm-h"><h2>Report for the WhatsApp group</h2><button class="btn sm" id="rFmt">✏️ Headline &amp; end line</button></div>
         ${settings.reportName || settings.base ? '' : '<p class="muted" style="margin-bottom:6px">Set your report name and base (e.g. Rex👑, SG Farlim) in Settings → 👤 My profile.</p>'}
         <label class="chk"><input type="checkbox" id="rHide" ${r.hideNames ? 'checked' : ''}> Hide client names (Client A, B, C)</label>
         <p class="muted" style="margin:8px 0 4px">Edit anything below before copying.</p>
@@ -1245,21 +1247,15 @@
     $('#rTxt').value = shown();
     $('#rTxt').addEventListener('input', e => { r.edited = e.target.value; $('#rEdited').hidden = false; r.updated = new Date().toISOString(); reports[date] = r; saveReports(); });
     $('#rReset').onclick = async () => {
-      if (!(await confirmBox('Undo your edits?', 'The report is rebuilt from today\'s visits, reflection and tomorrow. Your changes to the text are removed.', 'Undo edits'))) return;
+      if (!(await confirmBox('Undo your edits?', 'The report is rebuilt from today\'s visits, your headline and end line. Your changes to the text are removed.', 'Undo edits'))) return;
       delete r.edited; touch(); route();
     };
-    let lastBox = 'rRef';
-    ['rRef', 'rTom'].forEach(id => { $('#' + id).addEventListener('focus', () => { lastBox = id; }); });
-    $('#rRef').oninput = e => { r.reflection = e.target.value; touch(); };
-    $('#rTom').oninput = e => { r.tomorrow = e.target.value; touch(); };
+    $('#rFmt').onclick = () => editReportFormat();
     $('#rHide').onchange = e => { r.hideNames = e.target.checked; touch(); };
     $('#rShare').onchange = e => { settings.shareTally = e.target.checked; saveSettings(); };
     $$('[data-visit]').forEach(b => b.onclick = () => editVisit(items[+b.dataset.visit]));
     $('#dPick').onchange = e => { if (e.target.value) location.hash = '#/day/' + e.target.value; };
     $('#quickAdd').onclick = () => quickAdd(date);
-    $('#rMic').onclick = () => voiceInto($('#rMic'), $('#rMicT'), txt => {
-      const box = $('#' + lastBox); box.value = (box.value ? box.value.trim() + ' ' : '') + txt; box.dispatchEvent(new Event('input'));
-    });
     $('#rCopy').onclick = async () => {
       const t = $('#rTxt').value;
       try { await navigator.clipboard.writeText(t); toast('Copied. Paste it in the WhatsApp group.'); } catch (e) { toast('Copy did not work. Press and hold the report text to copy it.'); }
@@ -1285,6 +1281,19 @@
     $('#vSave', el).onclick = () => { m.time = $('#vTime', el).value; m.tags = tags; m.reportNote = $('#vNote', el).value.trim(); c.updated = new Date().toISOString(); saveCases(); closeSheet(); route(); };
   }
 
+  /* the agent's own headline (lines above the date) and end line for the 三访 report */
+  function editReportFormat() {
+    const defHead = (settings.reportName ? '{name}' : (settings.name || '{name}')) + (settings.base ? ' ({base})' : '') + '\n' + (settings.reportOpening == null ? '以愉快的心情与大家一起修练三访。' : settings.reportOpening);
+    const cur = typeof settings.reportHead === 'string' && settings.reportHead.trim() ? settings.reportHead : defHead;
+    const el = sheet(`<div class="sheet-top"><h3>Headline &amp; end line</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div>
+      <p class="muted">Shortcuts: <b>{name}</b> your report name, <b>{base}</b> your base, <b>{date}</b> e.g. 13/11/2026, <b>{day}</b> e.g. Friday. The date line, V / R / Total and the visits stay in the middle.</p>
+      <div class="f"><label>Headline (top lines)</label><textarea id="fHead" rows="3">${esc(cur)}</textarea></div>
+      <div class="f"><label>End line (bottom, optional)</label><textarea id="fEnd" rows="2" placeholder="e.g. 加油！明天继续 💪">${esc(settings.reportEnd || '')}</textarea></div>
+      <div class="row"><button class="btn" id="fReset">Use default</button><button class="btn primary" id="fOk">Save</button></div>`);
+    $('#fOk', el).onclick = () => { settings.reportHead = $('#fHead', el).value.trim(); settings.reportEnd = $('#fEnd', el).value.trim(); saveSettings(); closeSheet(); toast('Report format saved'); route(); };
+    $('#fReset', el).onclick = () => { delete settings.reportHead; delete settings.reportEnd; saveSettings(); closeSheet(); toast('Back to the default format'); route(); };
+  }
+
   /* quick log for someone met without a voice note */
   function quickAdd(date, presetType, presetName) {
     const qTags = FU.tagsFor(presetType || 'fact_find');
@@ -1300,13 +1309,15 @@
       <div class="grid2"><div class="f"><label>Time</label><input id="qTime" type="time" value="${date === todayISO() ? nowT : ''}"></div><div class="f"><label>P / O / R</label>${tagButtons(qTags)}</div></div>
       <label class="chk"><input type="checkbox" id="qVisit" checked> Face-to-face visit (counts for 三访)</label>
       <div class="f"><label>Notes / report note</label><textarea id="qNote" rows="3" placeholder="e.g. Direct approach, open for review and do CFF."></textarea></div>
-      <div class="grid2"><div class="f"><label>Next step (optional)</label><input id="qNext"></div><div class="f"><label>Follow up on</label><input id="qDate" type="date"></div></div>
+      <div class="f"><label>Next step (optional)</label><input id="qNext" placeholder="e.g. Present medical card plan"></div>
+      <div class="grid2"><div class="f"><label>Next appointment</label><input id="qDate" type="date"></div><div class="f"><label>Time</label><input id="qApptT" type="time" value="10:00"></div></div>
+      <p class="muted" style="margin:-4px 0 8px">${calCfg ? '📅 Goes into your REDEFINE Calendar automatically. Tap ✓ Done there after the meeting and it comes back here.' : 'Connect REDEFINE Calendar in Settings and this appointment goes there automatically.'}</p>
       <div class="row"><button class="btn" data-close>Cancel</button><button class="btn primary" id="qSave">Save</button></div>`);
     wireTags(el, qTags);
     $('#qType', el).onchange = e => { qTags.splice(0, qTags.length, ...FU.tagsFor(e.target.value)); $$('[data-tg]', el).forEach(b => b.setAttribute('aria-pressed', qTags.includes(b.dataset.tg))); };
     $('#qWho', el).onchange = e => { $('#qNewF', el).hidden = !!e.target.value; };
     $$('#qKind button', el).forEach(b => b.onclick = () => { qKind = b.dataset.k; $$('#qKind button', el).forEach(x => x.setAttribute('aria-pressed', x === b)); });
-    $('#qSave', el).onclick = () => {
+    $('#qSave', el).onclick = async () => {
       let c = getCase($('#qWho', el).value);
       if (!c) {
         const name = $('#qName', el).value.trim(); if (!name) return $('#qName', el).classList.add('flag');
@@ -1317,7 +1328,13 @@
       const d = FU.normalizeDraft({meeting: {type: $('#qType', el).value, outcome: $('#qOut', el).value, nextStep: $('#qNext', el).value, followUpDate: $('#qDate', el).value, summary: 'Quick log'},
         tags: qTags, time: $('#qTime', el).value, reportNote: $('#qNote', el).value, visit: $('#qVisit', el).checked}, []);
       const qm = FU.applyToFarm(c, d, {date});
-      saveCases(); closeSheet(); pendingNext = {caseId: c.id, meetingId: qm.id}; route();
+      saveCases();
+      const apD = $('#qDate', el).value;
+      if (apD && calCfg) {
+        $('#qSave', el).disabled = true; $('#qSave', el).textContent = 'Adding to Calendar…';
+        try { await addAppointment(c, qm, apD, $('#qApptT', el).value || '10:00'); } catch (e) { toast('Saved here, but the Calendar did not take it (' + (CAL_ERR[e.code] || e.code) + '). Use the Calendar button instead.'); }
+      }
+      closeSheet(); pendingNext = {caseId: c.id, meetingId: qm.id}; route();
     };
   }
 
@@ -1387,17 +1404,17 @@
   function activityScreen(date, cat) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) date = todayISO();
     const g = FU.activitiesOn(cases, date);
-    cat = FU.ACTIVITIES.some(a => a.id === cat) || cat === 'all' ? cat : (load('pspt.actTab', 'all'));
-    const rows = cat === 'all' ? FU.meetingsOn(cases, date, true) : g[cat] || [];
+    cat = FU.ACTIVITIES.some(a => a.id === cat) ? cat : FU.ACTIVITIES.some(a => a.id === load('pspt.actTab', '')) ? load('pspt.actTab', '') : 'approach';
+    const rows = g[cat] || [];
     const typeFor = {approach: 'approach', open: 'fact_find', present: 'presentation', follow_up: 'follow_up', close: 'closing'};
     app.innerHTML = bar('Activities', '#/', `<input type="date" id="aPick" class="datepick" value="${date}" max="${todayISO()}" aria-label="Pick a day">`) + `<div class="wrap">
-      <div class="acttabs">${[['all', 'All', FU.meetingsOn(cases, date, true).length]].concat(FU.ACTIVITIES.map(a => [a.id, a.en, g[a.id].length])).map(([k, l, n]) => `<button type="button" data-cat="${k}" aria-pressed="${cat === k}"><b>${n}</b>${l}</button>`).join('')}</div>
-      <div class="card"><h2>${cat === 'all' ? 'Everything' : esc(FU.ACTIVITIES.find(a => a.id === cat).en)} on ${esc(date)}</h2>
+      <div class="acttabs">${FU.ACTIVITIES.map(a => [a.id, a.en, g[a.id].length]).map(([k, l, n]) => `<button type="button" data-cat="${k}" aria-pressed="${cat === k}"><b>${n}</b>${l}</button>`).join('')}</div>
+      <div class="card"><h2>${esc(FU.ACTIVITIES.find(a => a.id === cat).en)} on ${esc(date)}</h2>
         ${rows.length ? rows.map(({c, m}) => {
-          const a = FU.activityOf(m), lab = (FU.ACTIVITIES.find(x => x.id === a) || {en: FU.typeLabel(m.type)}).en;
+          const lab = FU.stagesOf(m).map(s => (FU.ACTIVITIES.find(x => x.id === s) || {en: FU.typeLabel(m.type)}).en).join(' + ');
           return `<a class="item" href="#/case/${c.id}"><div class="t"><b>${esc(c.client.name)} <span class="pill ${FU.kindOf(c) === 'client' ? 'ok' : 'grey'}">${FU.kindOf(c) === 'client' ? 'Client' : 'Prospect'}</span></b><span>${esc(FU.timeLabel(m.time) || '')}${m.time ? ' · ' : ''}${esc(lab)}${m.visit === false ? ' · not a visit' : ''}</span><span>${esc(FU.noteFor(m) || m.summary || '')}</span></div></a>`;
         }).join('') : '<p class="muted">Nothing recorded.</p>'}
-        <button class="btn block" id="aAdd">+ Add ${cat === 'all' ? 'an activity' : esc(FU.ACTIVITIES.find(a => a.id === cat).en.toLowerCase())}</button></div>
+        <button class="btn block" id="aAdd">+ Add ${esc(FU.ACTIVITIES.find(a => a.id === cat).en.toLowerCase())}</button></div>
     </div>${tabbar('activity')}`;
     $('#aPick').onchange = e => { if (e.target.value) location.hash = '#/activity/' + e.target.value + '/' + cat; };
     $$('[data-cat]').forEach(b => b.onclick = () => { save('pspt.actTab', b.dataset.cat); location.hash = '#/activity/' + date + '/' + b.dataset.cat; });
@@ -1451,7 +1468,109 @@
     const now = new Date(), nowT = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
     FU.applyToFarm(c, FU.normalizeDraft({meeting: {type: 'closing', summary: 'Closed', outcome: 'closed'}, tags: ['P'], time: nowT, visit: false}, []), {date: todayISO()});
     if (FU.kindOf(c) === 'prospect') c.kind = 'client';
-    saveCases(); toast('🎉 Congratulations!'); route();
+    saveCases(); route(); afterCloseSheet(c);
+  }
+
+  /* ======================= REDEFINE Calendar link =======================
+     A quick log with an appointment date + time creates a private event in the agent's REDEFINE Calendar.
+     When the agent taps ✓ Done or 💰 Closed on it in the Calendar, On Field logs the visit (for the 三访 report).
+     Uses the agent's own Calendar sign-in on this device; nothing about the client goes anywhere else. */
+  let calCfg = load('pspt.cal', null), calBusy = null;
+  const CAL_ERR = {wrong_code: 'That Calendar team code is not right.', wrong_pin: 'That PIN is not right for this name.', too_many_tries: 'Too many tries. Wait a few minutes.',
+    name_needed: 'Type your name as it is in the Calendar.', pin_4_digits: 'The PIN is 4 to 6 digits.', removed: 'This name was removed from the Calendar team.', offline: 'No connection.'};
+  async function calPost(body) {
+    let r; try { r = await fetch(FU.CAL_API, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify(body)}); } catch (e) { throw {code: 'offline'}; }
+    let j; try { j = await r.json(); } catch (e) { throw {code: 'upstream_error'}; }
+    if (j.error) throw {code: j.error};
+    return j;
+  }
+  const calApi = (op, body) => calPost(Object.assign({op, token: calCfg.token}, body || {}));
+  function connectCalendar() {
+    const el = sheet(`<div class="sheet-top"><h3>📅 Connect REDEFINE Calendar</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div>
+      <p>Use the <b>same team code, name and PIN</b> as your REDEFINE Calendar. Then appointments you set in a quick log go into your Calendar by themselves, and when you tap ✓ Done there, the visit comes back here for your 三访 report.</p>
+      <div class="f"><label>Calendar team code</label><input id="kCode" type="password" autocomplete="off"></div>
+      <div class="f"><label>Your name in the Calendar</label><input id="kName" value="${esc(settings.name || '')}"></div>
+      <div class="f"><label>Calendar PIN</label><input id="kPin" type="password" inputmode="numeric" maxlength="6"></div>
+      <p class="muted" id="kMsg" role="alert" style="color:var(--err);min-height:18px"></p>
+      <div class="row"><button class="btn" data-close>Cancel</button><button class="btn primary" id="kGo">Connect</button></div>`);
+    $('#kGo', el).onclick = async () => {
+      const b = $('#kGo', el); b.disabled = true; b.textContent = 'Connecting…';
+      try {
+        const r = await calPost({op: 'signin', code: $('#kCode', el).value.trim(), name: $('#kName', el).value.trim(), pin: $('#kPin', el).value.trim(), device: 'REDEFINE On Field'});
+        calCfg = {token: r.token, name: r.me && r.me.name, memberId: r.me && r.me.id}; save('pspt.cal', calCfg);
+        closeSheet();
+        toast(r.created ? '⚠️ Connected, but this made a NEW Calendar account. If you already use the Calendar, disconnect and check the name.' : '✅ Connected to REDEFINE Calendar as ' + calCfg.name);
+        route();
+      } catch (e) { $('#kMsg', el).textContent = CAL_ERR[e.code] || 'Could not connect (' + (e.code || 'error') + ').'; b.disabled = false; b.textContent = 'Connect'; }
+    };
+  }
+  /* put the appointment into the Calendar; returns the appointment kept on the person */
+  async function addAppointment(c, m, date, time) {
+    if (!calCfg || !date) return null;
+    const ev = FU.calEventFor({date, time, name: c.client.name, fromType: m.type, nextStep: m.nextStep});
+    const r = await calApi('save', {event: ev});
+    const appt = {calId: r.event.id, date, time: time || '10:00', calType: ev.type, fromId: m.id, status: 'set', title: ev.title};
+    c.appts = (c.appts || []).concat(appt); c.updated = new Date().toISOString(); saveCases();
+    return appt;
+  }
+  /* collect ✓ Done / 💰 Closed from the Calendar for appointments made here */
+  async function calPull() {
+    if (!calCfg || calBusy || !navigator.onLine) return;
+    const waiting = cases.filter(c => (c.appts || []).some(a => a.status === 'set'));
+    if (!waiting.length) return;
+    calBusy = (async () => {
+      try {
+        const data = await calApi('sync', {force: true}), byId = {};
+        (data.events || []).forEach(e => { byId[e.id] = e; });
+        let logged = 0, changed = false;
+        for (const c of waiting) {
+          for (const a of c.appts) {
+            if (a.status !== 'set') continue;
+            const e = byId[a.calId];
+            if (!e) { if (a.date < FU.addDays(todayISO(), -35)) { a.status = 'gone'; changed = true; } continue; }
+            if (e.out === 'done' || e.out === 'closed') {
+              const m = FU.eventToMeeting(e, a);
+              if (!(c.meetings || []).some(x => x.id === m.id)) { c.meetings = (c.meetings || []).concat(m).sort((x, y) => ((x.date || '') + (x.time || '')).localeCompare((y.date || '') + (y.time || ''))); logged++; }
+              a.status = e.out; changed = true;
+              if (e.out === 'closed') { c.afterClose = c.afterClose || {}; }
+            } else if (e.out === 'cancel') { a.status = 'cancelled'; changed = true; }   // ✕ Didn't happen in the Calendar
+            else if (e.start) { const d = new Date(e.start), p = n => String(n).padStart(2, '0'), nd = d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()), nt = p(d.getHours()) + ':' + p(d.getMinutes()); if (nd !== a.date || nt !== a.time) { a.date = nd; a.time = nt; changed = true; } }   // moved in the Calendar
+          }
+          if (changed) c.updated = new Date().toISOString();
+        }
+        if (changed) { saveCases(); const h = location.hash.replace(/^#\/?/, '').split('/')[0]; if (['', 'day', 'activity', 'followups', 'case'].includes(h)) route(); }
+        if (logged) toast(`📅 ${logged} visit${logged > 1 ? 's' : ''} from REDEFINE Calendar added to your 三访`);
+      } catch (e) {
+        if (e.code === 'signed_out' || e.code === 'removed') { toast('REDEFINE Calendar link expired. Connect it again in Settings.'); calCfg = null; save('pspt.cal', null); }
+      } finally { calBusy = null; }
+    })();
+    return calBusy;
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') calPull(); });
+  setInterval(() => { if (document.visibilityState === 'visible') calPull(); }, 60000);
+  setTimeout(calPull, 3000);
+
+  /* ======================= after a close: the REDEFINE service checklist ======================= */
+  const hasClosed = c => (c.meetings || []).some(m => m.type === 'closing' || m.outcome === 'closed');
+  function afterCloseLeft(c) { const d = c.afterClose || {}; return FU.AFTER_CLOSE.filter(x => !d[x.k]); }
+  function afterCloseCard(c) {
+    if (!hasClosed(c) || !afterCloseLeft(c).length) return '';
+    const d = c.afterClose || {};
+    return `<div class="card afterclose"><h2>🎉 After closing: ${FU.AFTER_CLOSE.length - afterCloseLeft(c).length}/${FU.AFTER_CLOSE.length} done</h2>
+      ${FU.AFTER_CLOSE.map(x => `<div class="ac-row"><label class="chk"><input type="checkbox" data-ac="${x.k}" ${d[x.k] ? 'checked' : ''}> <span><b>${esc(x.label)}</b><small>${esc(x.hint)}</small></span></label>
+        ${x.k === 'summary' ? '<button type="button" class="btn sm" data-acgo="summary">Open</button>' : x.url ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(x.url)}">Open</a>` : ''}</div>`).join('')}
+    </div>`;
+  }
+  function wireAfterClose(c) {
+    $$('[data-ac]').forEach(b => b.onchange = () => { c.afterClose = Object.assign({}, c.afterClose, {[b.dataset.ac]: b.checked}); c.updated = new Date().toISOString(); saveCases(); if (!afterCloseLeft(c).length) toast('✅ All done for ' + c.client.name + '. Great service!'); route(); });
+    const s = $('[data-acgo="summary"]'); if (s) s.onclick = () => { const w = $('.polwrap'); if (w) w.open = true; const a = $('#addP'); if (a) a.scrollIntoView({behavior: 'smooth', block: 'center'}); };
+  }
+  function afterCloseSheet(c) {
+    sheet(`<div class="sheet-top"><h3>🎉 ${esc(c.client.name)} closed!</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div>
+      <p>Before you move on, finish the REDEFINE service steps:</p>
+      <ol class="ac-list">${FU.AFTER_CLOSE.map(x => `<li><b>${esc(x.label)}</b><span>${esc(x.hint)}</span></li>`).join('')}</ol>
+      <p class="muted">The checklist stays on ${esc(c.client.name)}'s page until each one is ticked.</p>
+      <div class="row"><button class="btn" data-close>Later</button><a class="btn primary" href="#/case/${c.id}">Open ${esc(c.client.name)}</a></div>`);
   }
 
   /* ---------- staying signed in ----------
@@ -1471,7 +1590,8 @@
   function openSettings() {
     const s = session();
     const el = sheet(`<div class="sheet-top"><h3>Settings</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div>
-      <button class="btn block" id="openProf" style="margin-bottom:12px">👤 My profile (photo, intro, why insurance)</button>
+      <button class="btn block" id="openProf" style="margin-bottom:8px">👤 My profile (photo, intro, why insurance)</button>
+      <button class="btn block" id="calLink" style="margin-bottom:12px">${calCfg ? '📅 REDEFINE Calendar: connected as ' + esc(calCfg.name || '') + ' · Disconnect' : '📅 Connect REDEFINE Calendar'}</button>
       <div class="checks" style="margin-bottom:12px"><b>📒 REDEFINE Prospecting</b><br>${settings.prCode ? '✅ Connected. 📞 Called, 📅 appointments and ☕ appointments done come in as quick logs by themselves' + (settings.prLast ? ' (last update ' + esc(new Date(settings.prLast).toLocaleString()) + ')' : '') + '.<div class="row" style="margin-top:6px"><button class="btn" id="prNow">Update now</button><button class="btn ghost" id="prOff">Disconnect</button></div>' : 'In Prospecting → Me → Connected apps → Connect REDEFINE On Field. Or paste the code here:<div class="row" style="margin-top:6px"><input id="prIn" placeholder="Paste the code" style="flex:1;font-family:monospace"><button class="btn primary" id="prGo">Connect</button></div>'}</div>
       <p>Shown at the bottom of every PDF.</p>
       <div class="f"><label for="sN">Your name</label><input id="sN" value="${esc(settings.name)}" autocomplete="name"></div>
@@ -1489,6 +1609,7 @@
       saveSettings(); closeSheet(); toast('Saved'); route();
     };
     $('#openProf', el).onclick = openProfile;
+    $('#calLink', el).onclick = async () => { if (!calCfg) return connectCalendar(); if (await confirmBox('Disconnect REDEFINE Calendar?', 'New appointments stop going to the Calendar, and Done there stops coming back. Events already in the Calendar stay.', 'Disconnect')) { calCfg = null; save('pspt.cal', null); toast('Disconnected'); } };
     const prGo = $('#prGo', el); if (prGo) prGo.onclick = () => { const v = $('#prIn', el).value.replace(/[^a-z0-9]/gi, ''); if (!v) return toast('Paste the code from Prospecting first'); closeSheet(); connectProspecting(v); };
     const prNow = $('#prNow', el); if (prNow) prNow.onclick = () => { closeSheet(); prPull(true); };
     const prOff = $('#prOff', el); if (prOff) prOff.onclick = async () => { if (await confirmBox('Disconnect REDEFINE Prospecting?', 'New calls and appointments will stop coming in. Quick logs already here stay.', 'Disconnect', true)) { settings.prCode = ''; settings.prSince = ''; saveSettings(); closeSheet(); toast('Disconnected'); } };

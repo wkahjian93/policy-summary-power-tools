@@ -238,7 +238,7 @@ a.btn.nx{text-decoration:none}
 .fcard span{font-size:13px;color:var(--muted)}
 .fcard em{font-style:normal;color:var(--err);font-weight:700}
 .fcard .go{font-size:26px;color:var(--muted)}
-.acttabs{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin-bottom:12px}
+.acttabs{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-bottom:12px}
 .acttabs button{display:flex;flex-direction:column;align-items:center;padding:6px 2px;border-radius:10px;background:#ECE9E1;font-size:10.5px;font-weight:600;color:var(--muted)}
 .acttabs button b{font-size:17px;color:var(--ink)}
 .acttabs button[aria-pressed=true]{background:var(--ink);color:#fff}
@@ -254,3 +254,14 @@ a.btn.nx{text-decoration:none}
 .ftable tr.done td{color:var(--ok);font-weight:600}
 .ftable tr.late td{color:var(--err)}
 .ftable tr.due td{color:var(--gold);font-weight:700}
+.afterclose{border-color:var(--gold);background:#FFFBF1}
+.ac-row{display:flex;align-items:center;justify-content:space-between;gap:8px;border-top:1px solid var(--line);padding:6px 0}
+.ac-row:first-of-type{border-top:0}
+.ac-row .chk{align-items:flex-start;flex:1}
+.ac-row .chk span{display:flex;flex-direction:column}
+.ac-row small{color:var(--muted);font-size:12px}
+.ac-row a.btn{text-decoration:none}
+.ac-list{padding-left:20px;margin:0 0 10px}
+.ac-list li{margin-bottom:8px}
+.ac-list span{display:block;font-size:13px;color:var(--muted)}
+.ok-box{background:#E5F4EF;border-color:#BFE3D6}
