@@ -282,5 +282,24 @@ eq('CI drops to 100k at 70', s.cats.ci.drop, {age: 70, left: 100000});
 eq('sample has 1 item to confirm', PS.pendingChecks(c).length, 1);
 eq('RM format', [PS.rm(1500000, {short: true}), PS.rm(250000, {short: true}), PS.rm(9900), PS.rm(null)], ['RM1.5m', 'RM250k', 'RM9,900', '—']);
 
+// REDEFINE Prospecting: collected lead activity -> quick logs on the farm
+{
+  const FU = require('./docs/followup.js');
+  const cs = [{id: 'k1', client: {name: 'Mei Ling'}, kind: 'prospect', meetings: [], policies: []}];
+  const items = [
+    {id: 'r1', name: 'Mei Ling', source: 'referral', status: 'approved', calledAt: '2026-11-21T02:00:00Z', planAt: '2026-11-23T07:00:00Z', appt: '', apptAt: ''},
+    {id: 'r2', name: 'New Person', source: 'roadshow', status: 'pending', calledAt: '2026-11-21T03:00:00Z', planAt: '', noAppt: 1}
+  ];
+  const r = FU.applyProspecting(cs, items);
+  eq('prospecting: 1 new prospect, Mei Ling matched by name', [r.created, cs.length, cs[0].meetings.length], [1, 2, 1]);
+  eq('prospecting: call with appointment = Approach tagged O, follow up on the appointment day', [cs[0].meetings[0].type, cs[0].meetings[0].tags, cs[0].meetings[0].followUpDate, cs[0].meetings[0].visit], ['approach', ['O'], '2026-11-23', false]);
+  eq('prospecting: same items again add nothing', FU.applyProspecting(cs, items).changed, 0);
+  items[0].appt = 'pending'; items[0].apptAt = '2026-11-23T07:00:00Z'; items[0].apptMark = '2026-11-23T09:00:00Z';
+  FU.applyProspecting(cs, items);
+  eq('prospecting: appointment done = Open visit at 3pm MYT (三访)', cs[0].meetings.filter(m => m.type === 'fact_find').map(m => [m.date, m.time, m.visit]), [['2026-11-23', '15:00', true]]);
+  items[0].status = 'rejected'; FU.applyProspecting(cs, items);
+  eq('prospecting: lead not counted -> its quick logs removed', cs[0].meetings.length, 0);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

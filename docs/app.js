@@ -55,6 +55,20 @@
     closeSheet(); leaveGuard = null;
     if (pendingNext) { const p = pendingNext; pendingNext = null; setTimeout(() => nextSheet(p), 0); }   // after saving a meeting: offer Calendar and 定联
     /* link from 定联 (Customer Relationship App) after "Presented": #/record?name=<name> starts a recording for that person */
+    const lp = location.hash.match(/^#\/?link-prospecting\?(.*)$/);
+    if (lp) {   // from REDEFINE Prospecting → Me → Connected apps
+      const code = (new URLSearchParams(lp[1]).get('code') || '').replace(/[^a-z0-9]/gi, '').slice(0, 60);
+      history.replaceState(null, '', location.pathname + location.search + '#/');
+      if (code) connectProspecting(code);
+      return route();
+    }
+    const pq = location.hash.match(/^#\/?prospecting\?(.*)$/);
+    if (pq) {   // "📒 On Field" on a lead in Prospecting: collect, then open that prospect (or a quick log for them)
+      const name = (new URLSearchParams(pq[1]).get('name') || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+      history.replaceState(null, '', location.pathname + location.search + '#/');
+      prPull(true).then(() => { const c = FU.matchClient(cases, name); if (c) location.hash = '#/case/' + c.id; else { route(); quickAdd(todayISO(), 'approach', name); } });
+      return;
+    }
     const qm = location.hash.match(/^#\/?record\?(.*)$/);
     if (qm) {
       const name = (new URLSearchParams(qm[1]).get('name') || '').replace(/\s+/g, ' ').trim().slice(0, 80);
@@ -694,6 +708,32 @@
     const msg = syncState === 'server' ? 'Sync waiting for the team server update' : syncState === 'signin' ? 'Sync paused: sign in again' : syncState === 'offline' ? 'Sync paused: no connection' : syncing ? 'Syncing…' : t ? 'Synced ' + t : 'Sync on';
     return `<button class="syncline${syncState ? ' warn' : ''}" id="syncSet">☁︎ ${esc(msg)} · ${esc(syncCfg.name)}</button>`;
   }
+  /* ---------- REDEFINE Prospecting: collect lead activity (called / appointment) into quick logs ---------- */
+  let prBusy = null;
+  function prPull(loud) {
+    if (!settings.prCode || !navigator.onLine) return Promise.resolve(0);
+    if (prBusy) return prBusy;
+    prBusy = fetch(FU.PROSPECTING_URL, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify({op: 'feed', code: settings.prCode, since: settings.prSince || ''})})
+      .then(r => r.json()).then(j => {
+        prBusy = null;
+        if (j.error === 'bad_link') { settings.prCode = ''; settings.prSince = ''; saveSettings(); toast('REDEFINE Prospecting was disconnected (the code was replaced). Connect again in Settings.'); return 0; }
+        if (j.error) throw new Error(j.error);
+        const r = FU.applyProspecting(cases, j.items, {guide: settings.guide});
+        settings.prSince = j.now; settings.prLast = new Date().toISOString(); saveSettings();
+        if (r.changed || r.created) { saveCases(); if (loud !== 'quiet') toast('📒 From Prospecting: ' + r.changed + ' update(s)' + (r.created ? ', ' + r.created + ' new prospect(s)' : '')); route(); }
+        else if (loud === true) toast('Up to date with Prospecting');
+        return r.changed;
+      }).catch(() => { prBusy = null; if (loud === true) toast('Could not reach REDEFINE Prospecting. Try again later.'); return 0; });
+    return prBusy;
+  }
+  function connectProspecting(code) {
+    settings.prCode = code; settings.prSince = ''; saveSettings();
+    toast('Connecting REDEFINE Prospecting…');
+    prPull('quiet').then(n => { if (settings.prCode) toast('✅ Connected to REDEFINE Prospecting' + (n ? ' · ' + n + ' update(s) added' : '') + '. Calls and appointments now come in by themselves.'); });
+  }
+  setInterval(() => { if (document.visibilityState === 'visible') prPull('quiet'); }, 5 * 60e3);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') prPull('quiet'); });
+
   function updateSyncLine() { const el = $('#syncLine'); if (el) { el.innerHTML = syncLine(); $('#syncSet').onclick = openSync; } }
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncNow(); });
   setInterval(() => { if (document.visibilityState === 'visible') syncNow(); }, 30000);   // devices open at the same time catch up within about 30 s
@@ -1246,14 +1286,14 @@
   }
 
   /* quick log for someone met without a voice note */
-  function quickAdd(date, presetType) {
+  function quickAdd(date, presetType, presetName) {
     const qTags = FU.tagsFor(presetType || 'fact_find');
     let qKind = 'prospect';
     const now = new Date(), nowT = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
     const el = sheet(`<div class="sheet-top"><h3>Quick log</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div>
       <p class="muted">For an activity you didn't record by voice. It is saved to their farm.</p>
       <div class="f"><label>Who</label><select id="qWho"><option value="">New person…</option>${cases.filter(x => !x.sample).sort((a, b) => a.client.name.localeCompare(b.client.name)).map(x => `<option value="${x.id}">${esc(x.client.name)}${x.client.nickname ? ' (' + esc(x.client.nickname) + ')' : ''}</option>`).join('')}</select></div>
-      <div id="qNewF"><div class="f"><label>Name (称呼)</label><input id="qName" placeholder="e.g. Ah Seng"></div>
+      <div id="qNewF"><div class="f"><label>Name (称呼)</label><input id="qName" placeholder="e.g. Ah Seng" value="${esc(presetName || '')}"></div>
         <div class="seg" id="qKind"><button type="button" data-k="prospect" aria-pressed="true">🌱 Prospect</button><button type="button" data-k="client" aria-pressed="false">⭐ Existing client</button></div></div>
       <div class="grid2"><div class="f"><label>Type</label><select id="qType">${FU.MEETING_TYPES.map(t => `<option value="${t.id}" ${t.id === (presetType || 'fact_find') ? 'selected' : ''}>${t.zh} · ${t.en}</option>`).join('')}</select></div>
       <div class="f"><label>Result</label><select id="qOut"><option value="none">No decision yet</option><option value="considering">Considering</option><option value="closed">Closed 🎉</option><option value="not_interested">Not interested</option></select></div></div>
@@ -1432,6 +1472,7 @@
     const s = session();
     const el = sheet(`<div class="sheet-top"><h3>Settings</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div>
       <button class="btn block" id="openProf" style="margin-bottom:12px">👤 My profile (photo, intro, why insurance)</button>
+      <div class="checks" style="margin-bottom:12px"><b>📒 REDEFINE Prospecting</b><br>${settings.prCode ? '✅ Connected. 📞 Called, 📅 appointments and ☕ appointments done come in as quick logs by themselves' + (settings.prLast ? ' (last update ' + esc(new Date(settings.prLast).toLocaleString()) + ')' : '') + '.<div class="row" style="margin-top:6px"><button class="btn" id="prNow">Update now</button><button class="btn ghost" id="prOff">Disconnect</button></div>' : 'In Prospecting → Me → Connected apps → Connect REDEFINE On Field. Or paste the code here:<div class="row" style="margin-top:6px"><input id="prIn" placeholder="Paste the code" style="flex:1;font-family:monospace"><button class="btn primary" id="prGo">Connect</button></div>'}</div>
       <p>Shown at the bottom of every PDF.</p>
       <div class="f"><label for="sN">Your name</label><input id="sN" value="${esc(settings.name)}" autocomplete="name"></div>
       <div class="f"><label for="sT">Title (optional)</label><input id="sT" value="${esc(settings.title)}" placeholder="e.g. Financial Planner, REDEFINE"></div>
@@ -1448,6 +1489,9 @@
       saveSettings(); closeSheet(); toast('Saved'); route();
     };
     $('#openProf', el).onclick = openProfile;
+    const prGo = $('#prGo', el); if (prGo) prGo.onclick = () => { const v = $('#prIn', el).value.replace(/[^a-z0-9]/gi, ''); if (!v) return toast('Paste the code from Prospecting first'); closeSheet(); connectProspecting(v); };
+    const prNow = $('#prNow', el); if (prNow) prNow.onclick = () => { closeSheet(); prPull(true); };
+    const prOff = $('#prOff', el); if (prOff) prOff.onclick = async () => { if (await confirmBox('Disconnect REDEFINE Prospecting?', 'New calls and appointments will stop coming in. Quick logs already here stay.', 'Disconnect', true)) { settings.prCode = ''; settings.prSince = ''; saveSettings(); closeSheet(); toast('Disconnected'); } };
     const o = $('#out', el); if (o) o.onclick = async () => {
       if (!(await confirmBox('Sign out of this device?', 'You will need the team code again to read photos and PDFs' + (syncCfg ? ', and sync will pause until you sign back in' : '') + '. Clients on this device stay. You normally never need to sign out.', 'Sign out', true))) return;
       localStorage.setItem('pspt.session', 'null'); toast('Signed out'); route();
@@ -1457,4 +1501,5 @@
 
   route();
   syncNow();
+  prPull('quiet');
 })();

@@ -296,6 +296,52 @@
   /* remember a deleted meeting/policy so another device's copy doesn't bring it back */
   function markRemoved(c, kind, id) { c.removed = c.removed || {meetings: [], policies: []}; c.removed[kind] = c.removed[kind] || []; if (!c.removed[kind].includes(id)) c.removed[kind].push(id); }
 
+  /* ---------- REDEFINE Prospecting: lead activity collected with the agent's link code -> quick logs ----------
+     One lead = up to two quick logs on that prospect's farm (created as a 🌱 prospect if new):
+       📞 called (+ 📅 appointment set)  -> Approach, not a 三访 visit; with an appointment it is tagged O and the follow-up date is the appointment
+       ☕ appointment done               -> Open (了解需求), a face-to-face visit (counts for 三访)
+     Ids carry the step time, so undo + redo in Prospecting gives a fresh entry (deleted ids stay deleted across devices). */
+  const PROSPECTING_URL = 'https://script.google.com/macros/s/AKfycbwGwiZTn-y6gTpZFRCDbvnYoyhwM3kLfvLK6yESCvMzchR0DC0mAerWhv0wk_dhWbEF/exec';
+  const myt = iso => new Date(new Date(iso).getTime() + 8 * 3600e3).toISOString();
+  const stamp = iso => new Date(iso).getTime().toString(36);
+  function applyProspecting(cases, items, opt) {
+    const o = opt || {}, newId = o.newId || (() => Math.random().toString(36).slice(2, 10)), now = o.now || new Date().toISOString();
+    let changed = 0, created = 0;
+    (items || []).forEach(it => {
+      const id = String(it.id || ''), name = str(it.name).slice(0, 60); if (!id || !name) return;
+      const tag = it.source === 'roadshow' ? 'roadshow' : 'referral', gone = it.status === 'rejected';
+      const met = (it.appt === 'pending' || it.appt === 'approved') && it.apptAt;
+      const want = {};
+      if (!gone && it.calledAt) {
+        const plan = it.planAt ? myt(it.planAt) : '';
+        want['pr_' + id + '_c' + stamp(it.calledAt)] = {type: 'approach', date: myt(it.calledAt).slice(0, 10), time: myt(it.calledAt).slice(11, 16), visit: false,
+          tags: plan ? ['O'] : [], summary: '📞 Called (' + tag + ', from Prospecting)' + (plan ? ' · 📅 appointment ' + plan.slice(0, 10) + ' ' + plan.slice(11, 16) : (it.noAppt ? ' · no appointment' : '')),
+          nextStep: plan ? 'Appointment ' + plan.slice(11, 16) : '', followUpDate: plan ? plan.slice(0, 10) : '', outcome: it.noAppt ? 'not_interested' : 'none'};
+      }
+      if (!gone && met) want['pr_' + id + '_a' + stamp(it.apptMark || it.apptAt)] = {type: 'fact_find', date: myt(it.apptAt).slice(0, 10), time: myt(it.apptAt).slice(11, 16), visit: true,
+        tags: tagsFor('fact_find'), summary: '☕ Appointment done (' + tag + ', from Prospecting)', nextStep: '', followUpDate: '', outcome: 'none'};
+      let c = cases.find(x => !x.sample && (x.meetings || []).some(m => String(m.id).indexOf('pr_' + id + '_') === 0)) || matchClient(cases, name);
+      const keys = Object.keys(want);
+      if (!c) {
+        if (!keys.length) return;
+        c = {id: newId(), created: now, updated: now, kind: 'prospect', client: {name, nickname: '', age: null, income: null}, guide: Object.assign({}, o.guide || {death: 10, ci: 5}), policies: [], meetings: [], from: 'prospecting'};
+        cases.push(c); created++;
+      }
+      c.meetings = c.meetings || [];
+      const removed = new Set(((c.removed || {}).meetings) || []);
+      c.meetings.filter(m => String(m.id).indexOf('pr_' + id + '_') === 0 && !want[m.id]).forEach(m => { markRemoved(c, 'meetings', m.id); c.meetings = c.meetings.filter(x => x !== m); changed++; });
+      keys.forEach(k => {
+        if (removed.has(k)) return;   // the agent deleted it here: don't bring it back
+        const w = want[k], m = c.meetings.find(x => x.id === k);
+        if (!m) { c.meetings.push(Object.assign({id: k, concepts: [], sentPdf: false, letterTitle: '', reportNote: '', qa: {}, src: 'prospecting'}, w)); changed++; return; }
+        ['date', 'time', 'tags', 'nextStep', 'followUpDate'].forEach(f => { if (JSON.stringify(m[f]) !== JSON.stringify(w[f])) { m[f] = w[f]; changed++; } });
+      });
+      c.meetings.sort((x, y) => ((x.date || '') + (x.time || '')).localeCompare((y.date || '') + (y.time || '')));
+      c.updated = now;
+    });
+    return {changed, created};
+  }
+
   /* links into the other REDEFINE apps */
   const CAL_URL = 'https://wkahjian93.github.io/redefine-calendar/', CRM_URL = 'https://remembered.dwz-rooms-server.workers.dev/';
   function calendarLink(base, o) {
@@ -319,6 +365,6 @@
   }
 
   const api = {ACTIVITIES, activityOf, kindOf, isVisit, activitiesOn, followTrack, followList, FU_STEPS, daysBetween, mergeCase, markRemoved, CAL_URL, CRM_URL, calendarLink, dinglianLink, TARGET, TARGETS, QUESTIONS, TAGS, tagsFor, meetingsOn, dayStats, streak, weekStats, monthStats, timeLabel, noteFor, reportText, addDays,
-    MEETING_TYPES, LANGS, HINT, hintFor, buildPrompt, normalizeDraft, scrub, matchClient, applyToFarm, brief, typeLabel};
+    MEETING_TYPES, LANGS, HINT, hintFor, buildPrompt, normalizeDraft, scrub, matchClient, applyToFarm, brief, typeLabel, applyProspecting, PROSPECTING_URL};
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FU = api;
 })(this);
