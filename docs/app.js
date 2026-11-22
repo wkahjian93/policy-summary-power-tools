@@ -82,6 +82,7 @@
     if (h[0] === 'day') return dayScreen(h[1]);
     if (h[0] === 'activity') return activityScreen(h[1], h[2]);
     if (h[0] === 'followups') return followScreen();
+    if (h[0] === 'summaries') return summariesScreen();
     if (h[0] === 'team') return teamScreen();
     if (h[0] === 'case' && getCase(h[1])) {
       if (h[2] === 'policy') return editPolicy(getCase(h[1]), h[3]);
@@ -104,6 +105,7 @@
           <button class="btn primary block rec-big" id="recNew">🎙 Record a meeting</button>
           ${rec && (rec.transcript || rec.draft) ? '<button class="btn block" id="recResume" style="margin-top:8px">Continue unfinished note</button>' : ''}
           <button class="btn block ghost-l" id="new">+ New client or prospect</button></div>
+        <button type="button" class="card pshero" id="psGo"><span class="ps-ic">📄</span><span class="ps-t"><b>Policy summary</b><small>Snap or upload a client's policies from any insurer. Get Death, CI, TPD &amp; Medical totals on a one-page PDF.</small></span><span class="go">›</span></button>
         ${followCard()}
         ${settings.name ? '' : '<div class="checks"><b>Add your name first.</b> It goes at the bottom of every PDF. <a href="#" id="set2">Open settings</a></div>'}
         ${settings.name && !settings.intro ? '<div class="checks"><b>Set up "My profile" once.</b> Your photo, intro and why you do insurance go on every follow-up PDF. <a href="#" id="prof2">Open My profile</a></div>' : ''}
@@ -124,6 +126,7 @@
       </div>${tabbar('home')}`;
     $('#new').onclick = () => newCase(tab);
     $('#recNew').onclick = () => startRecord(null);
+    $('#psGo').onclick = () => psStart();
     $$('[data-kt]').forEach(b => b.onclick = () => { save('pspt.homeTab', b.dataset.kt); home.q = ''; home(); });
     const rr = $('#recResume'); if (rr) rr.onclick = () => { location.hash = '#/record' + (rec.caseId ? '/' + rec.caseId : ''); };
     const p2 = $('#prof2'); if (p2) p2.onclick = e => { e.preventDefault(); openProfile(); };
@@ -164,13 +167,18 @@
       <div class="wrap">
         <div class="kindbar ${kind}"><span>${kind === 'client' ? '⭐ Existing client' : '🌱 Prospect'}</span><button type="button" class="btn sm" id="kindSw">${kind === 'client' ? 'Move to Prospects' : 'Move to Existing Clients'}</button></div>
         ${afterCloseCard(c)}
+        <div class="card hero psbox"><h2>📄 Policy summary</h2>
+          ${c.policies.length ? `<div class="stat"><div><span>Death</span><b>${PS.rm(s.cats.death.total, {short: true})}</b></div><div><span>CI</span><b>${PS.rm(s.cats.ci.total, {short: true})}</b></div><div><span>Medical/yr</span><b>${s.medical.annual != null ? PS.rm(s.medical.annual, {short: true}) : '—'}</b></div></div>
+            <p class="ps-sub">${c.policies.length} polic${c.policies.length === 1 ? 'y' : 'ies'}${checks.length ? ` · <b>${checks.length} to check</b>` : ' · all checked'}</p>
+            <a class="btn primary block" href="#/case/${c.id}/summary">See summary &amp; create PDF</a>
+            <button type="button" class="btn block ps-more" id="psAdd">+ Add more policies</button>`
+          : `<p>Snap or upload ${esc(c.client.name || 'their')}'s policies from any insurer: policy pages, e-Connect / portal screenshots or PDFs. On Field reads them and adds up the cover on one page.</p>
+            <button type="button" class="btn primary block" id="psAdd">📷 Start policy summary</button>`}
+          <div id="resendPS"></div>
+        </div>
         ${kind === 'client' ? '' : farmCard(c)}
-        ${kind === 'client' ? '' : `<details class="polwrap" ${c.policies.length ? 'open' : ''}><summary><b>Their current policies</b> <span class="muted">(optional review before they become a client)</span></summary>`}
-        <h2 class="muted" style="margin:14px 2px 8px;font-weight:600">POLICY SUMMARY</h2>
-        ${c.policies.length ? `<div class="card hero"><h2>So far</h2>
-          <div class="stat"><div><span>Death</span><b>${PS.rm(s.cats.death.total, {short: true})}</b></div><div><span>CI</span><b>${PS.rm(s.cats.ci.total, {short: true})}</b></div><div><span>Medical/yr</span><b>${s.medical.annual != null ? PS.rm(s.medical.annual, {short: true}) : '—'}</b></div></div>
-        </div>` : ''}
-        <div id="resendPS"></div>
+        ${kind === 'client' ? '' : `<details class="polwrap" ${c.policies.length ? 'open' : ''}><summary><b>Their current policies</b> <span class="muted">(${c.policies.length})</span></summary>`}
+        <h2 class="muted" style="margin:14px 2px 8px;font-weight:600">ADD POLICIES</h2>
         <button class="btn primary block addbig" id="addP">${ICONS.cam}<span><b>Add policy pages</b><small>Photos, screenshots &amp; PDFs · many policies, any insurer</small></span></button>
         <div class="big3">
           <button class="btn sm" id="snap">${ICONS.cam.replace('<svg ', '<svg width="18" height="18" ')}Take photo</button>
@@ -204,6 +212,8 @@
     $('#kindSw').onclick = () => setKind(c, kind === 'client' ? 'prospect' : 'client');
     wireAfterClose(c);
     $('#addP').onclick = () => { if (!tray || tray.caseId !== c.id) { clearTray(); tray = {caseId: c.id, items: [], notes: []}; } showTray(c); };
+    $('#psAdd').onclick = () => { const w = $('.polwrap'); if (w) w.open = true; $('#addP').click(); };
+    if (openTrayFor === c.id) { openTrayFor = null; setTimeout(() => $('#psAdd') && $('#psAdd').click(), 0); }
     $('#snap').onclick = () => $('#camIn').click();
     $('#pics').onclick = () => $('#file').click();
     $('#pdfB').onclick = () => $('#pdfIn').click();
@@ -1472,9 +1482,51 @@
   function tabbar(active) {
     const t = todayISO(), att = FU.followList(cases, t).filter(x => x.t.attention).length;
     const vis = (FU.dayStats(cases)[t] || {met: 0}).met;
-    const items = [['home', '#/', '🏠', 'Home', ''], ['activity', '#/activity', '📋', 'Activities', ''],
+    const items = [['home', '#/', '🏠', 'Home', ''], ['summaries', '#/summaries', '📄', 'Summary', ''], ['activity', '#/activity', '📋', 'Activities', ''],
       ['followups', '#/followups', '🔁', 'Follow-ups', att ? `<i class="badge">${att}</i>` : ''], ['day', '#/day', '3️⃣', '三访', `<i class="badge soft">${vis}/3</i>`]];
     return `<nav class="tabbar">${items.map(([k, href, ic, label, badge]) => `<a href="${href}" class="${k === active ? 'on' : ''}"><span>${ic}${badge}</span>${label}</a>`).join('')}</nav>`;
+  }
+  /* ---------- 📄 Summary tab: every policy summary in one place ---------- */
+  let openTrayFor = null;   // open the "Add policy pages" tray when this client's page shows
+  function psStart() {
+    const people = cases.filter(x => !x.sample).sort((a, b) => (b.updated || '').localeCompare(a.updated || ''));
+    let k = 'client';
+    const el = sheet(`<div class="sheet-top"><h3>📄 Policy summary for…</h3><button type="button" class="xbtn" data-close aria-label="Close">✕</button></div>
+      ${people.length ? `<div class="f"><label for="psWho">Someone in your farm</label><select id="psWho"><option value="">New person…</option>${people.map(x => `<option value="${x.id}">${esc(x.client.name)}${x.client.nickname ? ' (' + esc(x.client.nickname) + ')' : ''}${x.policies.length ? ' · ' + x.policies.length + ' polic' + (x.policies.length === 1 ? 'y' : 'ies') : ''}</option>`).join('')}</select></div>` : ''}
+      <div id="psNewBox"><div class="f"><label for="psName">Client name (as it should appear on the PDF)</label><input id="psName" autocomplete="off"></div>
+        <div class="seg" id="psKind"><button type="button" data-k="client" aria-pressed="true">⭐ Existing client</button><button type="button" data-k="prospect" aria-pressed="false">🌱 Prospect</button></div></div>
+      <p class="muted">Next: snap or upload their policy pages (any insurer, many at once).</p>
+      <div class="row"><button class="btn" data-close>Cancel</button><button class="btn primary" id="psOk">Next: add policies</button></div>`);
+    const who = $('#psWho', el), box = $('#psNewBox', el);
+    if (who) who.onchange = () => { box.hidden = !!who.value; };
+    $$('#psKind button', el).forEach(b => b.onclick = () => { k = b.dataset.k; $$('#psKind button', el).forEach(x => x.setAttribute('aria-pressed', x === b)); });
+    $('#psOk', el).onclick = () => {
+      let c = who && who.value ? getCase(who.value) : null;
+      if (!c) {
+        const name = $('#psName', el).value.trim();
+        if (!name) { $('#psName', el).classList.add('flag'); return $('#psName', el).focus(); }
+        const now = new Date().toISOString();
+        c = {id: PS.uid(), created: now, updated: now, kind: k, client: {name, age: null, income: null}, guide: Object.assign({}, settings.guide), policies: []};
+        cases.push(c); saveCases();
+      }
+      closeSheet(); openTrayFor = c.id;
+      if (location.hash === '#/case/' + c.id) route(); else location.hash = '#/case/' + c.id;
+    };
+  }
+  function summariesScreen() {
+    const withP = cases.filter(c => c.policies.length).sort((a, b) => (b.updated || '').localeCompare(a.updated || ''));
+    app.innerHTML = bar('Policy summaries', '#/') + `<div class="wrap">
+      <button type="button" class="btn primary block addbig" id="psNew">${ICONS.cam}<span><b>New policy summary</b><small>Snap / upload policies · any insurer · one-page PDF</small></span></button>
+      <p class="muted" style="margin:4px 2px 12px">How it works: <b>1</b> add policy pages (photos, screenshots, PDFs) → <b>2</b> On Field reads insurer, plan and benefits → <b>3</b> check anything marked <span class="pill warn">check</span> → <b>4</b> create the PDF and send it.</p>
+      <h2 class="muted" style="margin:6px 2px 8px;font-weight:600">SUMMARIES (${withP.length})</h2>
+      ${withP.length ? withP.map(c => {
+        const s = PS.summarise(c), n = PS.pendingChecks(c).length;
+        return `<a class="item" href="#/case/${c.id}/summary"><div class="t"><b>${esc(c.client.name || 'Unnamed')}${c.sample ? ' <span class="pill grey">Sample</span>' : ''}</b><span>${c.policies.length} polic${c.policies.length === 1 ? 'y' : 'ies'} · ${FU.kindOf(c) === 'client' ? '⭐ client' : '🌱 prospect'}</span></div>
+          <div class="amt">${PS.rm(s.cats.death.total, {short: true})}<small>${n ? `<span class="pill warn">${n} to check</span>` : 'death cover'}</small></div></a>`;
+      }).join('') : `<div class="empty">No policy summaries yet.<br>Tap <b>New policy summary</b> to start${cases.some(c => c.sample) ? '' : ', or <a href="#" id="psDemo">open the sample</a> to see one'}.</div>`}
+    </div>${tabbar('summaries')}`;
+    $('#psNew').onclick = psStart;
+    const d = $('#psDemo'); if (d) d.onclick = e => { e.preventDefault(); const c = window.sampleCase(PS); cases.push(c); saveCases(); location.hash = '#/case/' + c.id + '/summary'; };
   }
   function followCard() {
     const list = FU.followList(cases, todayISO()), att = list.filter(x => x.t.attention);

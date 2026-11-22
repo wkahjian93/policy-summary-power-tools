@@ -21,7 +21,8 @@ Every client has a farm card: a **Before you meet** brief (last meeting, family 
 
 ## Sections (bottom bar)
 
-- **🏠 Home:** Record a meeting, the follow-up summary card, and your people split into **⭐ Existing Clients** (policies you manage; their policy summaries live here) and **🌱 Prospects** (people you are approaching or following up). Each person has a bar to move them between the two. When a prospect closes, the app offers to move them to Existing Clients. Older records count as clients if they have policies, otherwise as prospects.
+- **📄 Summary:** every policy summary in one place. **New policy summary** asks who it is for (someone in your farm or a new name), then opens the Add policy pages tray straight away. Tap a name to see the summary and create the PDF.
+- **🏠 Home:** Record a meeting, the **📄 Policy summary** shortcut (same as New policy summary), the follow-up summary card, and your people split into **⭐ Existing Clients** (policies you manage; their policy summaries live here) and **🌱 Prospects** (people you are approaching or following up). Each person has a bar to move them between the two. When a prospect closes, the app offers to move them to Existing Clients. Older records count as clients if they have policies, otherwise as prospects.
 - **📋 Activities:** pick a day and see, separately, who you **Approached, Opened, Presented, Followed up and Closed**, with time, client/prospect and notes. **+ Add** logs an activity (date, name, type, notes) without recording. A person is copied forward to every stage they reached: an approach that got an appointment (O) also shows under Open, an Open that went to a presentation (P) also under Present, and a presentation or follow-up that closed also under Close. Each name appears only once per list.
 - **🔁 Follow-ups:** everyone you present to is listed automatically with a Day 1 to Day 5 table (First to Fifth follow-up), days since the presentation, follow-ups done (x/5), and a red flag when someone is behind or has had no follow-up for 3 days. **Log follow-up** (WhatsApp, call or met), **Closed** or **Stop**. A new presentation starts the plan again.
 - **3️⃣ 三访:** only face-to-face visits: today's count, V / R / month, the report, and the last 14 days. WhatsApp or call follow-ups count as activities but not as 三访 visits (untick "Face-to-face visit" when logging).
@@ -93,6 +94,8 @@ AI is shared by the whole team through the team server: about 300 AI reads a day
 
 **The pain:** a policy summary means gathering every policy from every insurer, working out what each one covers and adding it all up by hand. That takes hours.
 **The fix:** snap or key in each policy, confirm anything the app wasn't sure about, and send the client a polished PDF in minutes.
+
+**Where to find it:** the **📄 Summary** tab at the bottom, the **📄 Policy summary** card on Home, or the **📄 Policy summary** box at the top of any client or prospect page (totals, See summary & create PDF, + Add more policies).
 
 ## What you need
 
