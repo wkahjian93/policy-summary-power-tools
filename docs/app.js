@@ -53,7 +53,8 @@
   /* ---------- router ---------- */
   function route() {
     closeSheet(); leaveGuard = null;
-    if (pendingNext) { const p = pendingNext; pendingNext = null; setTimeout(() => nextSheet(p), 0); }   // after saving a meeting: offer Calendar and 定联
+    if (sending) setTimeout(showSend, 0);   // a screen refresh (sync, Calendar) must never close the send sheet
+    else if (pendingNext) { const p = pendingNext; pendingNext = null; setTimeout(() => nextSheet(p), 0); }   // after saving a meeting: offer Calendar and 定联
     /* link from 定联 (Customer Relationship App) after "Presented": #/record?name=<name> starts a recording for that person */
     const lp = location.hash.match(/^#\/?link-prospecting\?(.*)$/);
     if (lp) {   // from REDEFINE Prospecting → Me → Connected apps
@@ -169,6 +170,7 @@
         ${c.policies.length ? `<div class="card hero"><h2>So far</h2>
           <div class="stat"><div><span>Death</span><b>${PS.rm(s.cats.death.total, {short: true})}</b></div><div><span>CI</span><b>${PS.rm(s.cats.ci.total, {short: true})}</b></div><div><span>Medical/yr</span><b>${s.medical.annual != null ? PS.rm(s.medical.annual, {short: true}) : '—'}</b></div></div>
         </div>` : ''}
+        <div id="resendPS"></div>
         <button class="btn primary block addbig" id="addP">${ICONS.cam}<span><b>Add policy pages</b><small>Photos, screenshots &amp; PDFs · many policies, any insurer</small></span></button>
         <div class="big3">
           <button class="btn sm" id="snap">${ICONS.cam.replace('<svg ', '<svg width="18" height="18" ')}Take photo</button>
@@ -198,6 +200,7 @@
       ${c.policies.length ? `<div class="dock"><a class="btn navy" href="#/case/${c.id}/summary">See policy summary &amp; PDF</a></div>` : ''}`;
     $('#key').onclick = () => { location.hash = '#/case/' + c.id + '/policy/new'; };
     wireFarm(c);
+    wireResend(c);
     $('#kindSw').onclick = () => setKind(c, kind === 'client' ? 'prospect' : 'client');
     wireAfterClose(c);
     $('#addP').onclick = () => { if (!tray || tray.caseId !== c.id) { clearTray(); tray = {caseId: c.id, items: [], notes: []}; } showTray(c); };
@@ -600,22 +603,122 @@
     catch (e) { stage.remove(); closeSheet(); toast('Could not create the PDF. Try again.'); console.error(e); return; }
     stage.remove();
     const fname = `Policy Summary - ${(c.client.name || 'Client').replace(/[^\w .-]+/g, '')} - ${new Date().toISOString().slice(0, 10)}.pdf`;
-    const file = new File([blob], fname, {type: 'application/pdf'});
-    const url = URL.createObjectURL(blob);
-    window.__lastPdf = blob; // for the local test run
-    const canShare = navigator.canShare && navigator.canShare({files: [file]});
-    const el = sheet(`<h3>PDF ready</h3><p><b>${esc(fname)}</b><br>${pages.length} pages · ${(blob.size / 1024).toFixed(0)} KB</p>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        ${canShare ? '<button class="btn primary block" id="share">Send to client…</button>' : ''}
-        <a class="btn ${canShare ? '' : 'primary'} block" href="${url}" download="${esc(fname)}" id="dl">Save / open PDF</a>
-        <button class="btn ghost block" data-x>Close</button></div>`);
-    $('[data-x]', el).onclick = () => { closeSheet(); URL.revokeObjectURL(url); };
-    const sh = $('#share', el);
-    if (sh) sh.onclick = async () => {
-      if (!(await confirmBox('Send to ' + (c.client.name || 'client') + '?', `Check the name on page 1 is <b>${esc(c.client.name)}</b> and that you are sending to the right person. Your phone will ask which app to use (WhatsApp, email…).`, 'Choose app'))) return;
-      try { await navigator.share({files: [file], title: fname, text: 'Hi ' + (c.client.name || '') + ', here is the summary of your insurance policies we went through.'}); }
-      catch (e) { if (e.name !== 'AbortError') toast('Sharing failed. Use Save / open PDF instead.'); }
+    await startSend({kind: 'summary', blob, fileName: fname, caseId: c.id, name: c.client.name || 'client',
+      wa: 'Hi ' + (c.client.name || '') + ', here is the summary of your insurance policies we went through.'});
+  }
+
+  /* ======================= send a PDF (+ WhatsApp message) without ever redoing it =======================
+     The PDF is kept on this device (IndexedDB, 30 days) the moment it is made. The send sheet survives screen
+     refreshes (sync, Calendar) and even a reload after coming back from WhatsApp, and every button can be tapped
+     again as often as needed. Nothing is sent anywhere by the app itself: the phone's share sheet does it. */
+  const PdfStore = (() => {
+    let dbp = null;
+    const db = () => dbp || (dbp = new Promise((ok, no) => {
+      const r = indexedDB.open('pspt-pdfs', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('pdf', {keyPath: 'key'});
+      r.onsuccess = () => ok(r.result); r.onerror = () => { dbp = null; no(r.error); };
+    }));
+    const run = async (mode, fn) => { const d = await db(); return new Promise((ok, no) => { const t = d.transaction('pdf', mode), q = fn(t.objectStore('pdf')); t.oncomplete = () => ok(q && q.result); t.onerror = () => no(t.error); }); };
+    return {
+      put: rec => run('readwrite', s => s.put(rec)).catch(() => null),
+      get: key => run('readonly', s => s.get(key)).catch(() => null),
+      all: () => run('readonly', s => s.getAll()).then(r => r || []).catch(() => []),
+      del: key => run('readwrite', s => s.delete(key)).catch(() => null),
+      async prune() { const all = await this.all(), old = Date.now() - 30 * 864e5; all.sort((a, b) => b.created - a.created).forEach((r, i) => { if (i >= 30 || r.created < old) this.del(r.key); }); }
     };
+  })();
+  let sending = null;   // the open send sheet: {key, file, url, wa, name, caseId, meetingId, kind, msg, sent}
+
+  /* keep a freshly made PDF and open the send sheet */
+  async function startSend(o) {
+    const key = o.kind + '_' + (o.meetingId || o.caseId) + '_' + Date.now().toString(36);
+    const buf = await o.blob.arrayBuffer();
+    await PdfStore.put({key, kind: o.kind, caseId: o.caseId, meetingId: o.meetingId || '', name: o.name, fileName: o.fileName, wa: o.wa || '', buf, created: Date.now(), sent: false});
+    PdfStore.prune();
+    openSendRec({key, kind: o.kind, caseId: o.caseId, meetingId: o.meetingId || '', name: o.name, fileName: o.fileName, wa: o.wa || '', buf, sent: false}, o.next);
+  }
+  function openSendRec(r, next) {
+    if (sending && sending.url) URL.revokeObjectURL(sending.url);
+    const file = new File([r.buf], r.fileName, {type: 'application/pdf'});
+    window.__lastPdf = file;
+    sending = {key: r.key, file, url: URL.createObjectURL(file), wa: r.wa, name: r.name, caseId: r.caseId, meetingId: r.meetingId, kind: r.kind, msg: '', sent: !!r.sent, next: next || null, busy: false};
+    save('pspt.sendOpen', r.key);
+    showSend();
+  }
+  /* re-open a kept PDF (📤 Send again on the client's page) */
+  async function resendPdf(key) { const r = await PdfStore.get(key); if (!r) return toast('That PDF is no longer on this device. Create it again.'); openSendRec(r, null); }
+  /* after a reload (the phone may reload the app when you come back from WhatsApp) */
+  async function resumeSend() { const k = load('pspt.sendOpen', null); if (!k || sending) return; const r = await PdfStore.get(k); if (r) { openSendRec(r, null); sending.msg = 'Your PDF is still here. Tap Send again if it did not go through.'; showSend(); } else save('pspt.sendOpen', null); }
+
+  function showSend() {
+    const s = sending; if (!s) return;
+    const canShare = !!(navigator.canShare && navigator.share && navigator.canShare({files: [s.file]}));
+    const el = sheet(`<div class="sheet-top"><h3>📤 Send to ${esc(s.name)}</h3><button type="button" class="xbtn" id="sdX" aria-label="Close">✕</button></div>
+      <p><b>${esc(s.file.name)}</b> · ${(s.file.size / 1024).toFixed(0)} KB${s.sent ? ' · <span class="ok-t">✅ sent</span>' : ''}</p>
+      <div class="checks">Check you pick <b>${esc(s.name)}</b>'s chat. ${s.wa ? 'The message is copied each time you tap Send, so you can paste it with the PDF.' : ''}</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${canShare ? `<button class="btn primary block" id="sdShare">${s.sent ? 'Send again…' : 'Send PDF…'}</button>` : ''}
+        ${s.wa ? '<button class="btn block" id="sdCopy">Copy WhatsApp message</button>' : ''}
+        <a class="btn ${canShare ? '' : 'primary'} block" href="${s.url}" download="${esc(s.file.name)}" target="_blank" rel="noopener">Save / open PDF</a>
+        ${s.wa ? `<a class="btn ghost block" href="https://wa.me/?text=${encodeURIComponent(s.wa)}" target="_blank" rel="noopener">Open WhatsApp with the message only</a>` : ''}
+      </div>
+      <p id="sdMsg" role="status" class="send-msg">${esc(s.msg)}</p>
+      <p class="muted" style="font-size:13px">If it fails, just tap again: nothing is lost. This PDF also stays on ${esc(s.name)}'s page (📤 Send again) on this device for 30 days.</p>
+      <button class="btn block" id="sdDone">Done</button>`);
+    $('#sheet').dataset.lock = '1';
+    const say = t => { s.msg = t; const m = $('#sdMsg', el); if (m) m.textContent = t; };
+    const copy = () => { if (!s.wa) return Promise.resolve(false); try { return navigator.clipboard.writeText(s.wa).then(() => true, () => false); } catch (e) { return Promise.resolve(false); } };
+    const cp = $('#sdCopy', el); if (cp) cp.onclick = async () => { if (await copy()) { say('Message copied. Paste it in the chat.'); toast('Message copied'); } else say('Copy did not work here. Use "Open WhatsApp with the message only".'); };
+    const sh = $('#sdShare', el); if (sh) sh.onclick = () => {
+      if (s.busy) return say('Your phone is still opening the share menu… wait a second.');
+      s.busy = true; setTimeout(() => { s.busy = false; }, 2500);
+      const copied = copy();   // no waiting before share(): the phone only allows it straight after the tap
+      const data = {files: [s.file], title: s.file.name};
+      if (s.wa && !isIOS()) data.text = s.wa;   // iPhone WhatsApp often fails with file + text together; the text is on the clipboard instead
+      let p; try { p = navigator.share(data); } catch (e) { p = Promise.reject(e); }
+      p.then(async () => {
+        s.sent = true; s.busy = false;
+        const r = await PdfStore.get(s.key); if (r) { r.sent = true; PdfStore.put(r); }
+        const c = getCase(s.caseId), m = c && s.meetingId && (c.meetings || []).find(x => x.id === s.meetingId);
+        if (m && !m.sentPdf) { m.sentPdf = true; c.updated = new Date().toISOString(); saveCases(); }
+        say((await copied) ? '✅ Shared. If the message is not in the chat, paste it (it is copied).' : '✅ Shared.');
+        showSend();
+      }, async e => {
+        s.busy = false;
+        const n = e && e.name;
+        if (n === 'AbortError') say('Not sent (closed, or WhatsApp did not take it). Tap Send PDF again.');
+        else if (n === 'NotAllowedError') say('Your phone blocked it this time. Tap Send PDF again.');
+        else if (n === 'InvalidStateError') say('The share menu was still open. Tap Send PDF again.');
+        else say('Sending did not work this time. Tap Send PDF again, or tap Save / open PDF and attach it in WhatsApp.');
+      });
+    };
+    const close = () => {
+      const nx = s.next; if (s.url) setTimeout(() => URL.revokeObjectURL(s.url), 60000);
+      sending = null; save('pspt.sendOpen', null); closeSheet();
+      if (nx) { pendingNext = nx; if (location.hash === '#/case/' + nx.caseId) route(); else location.hash = '#/case/' + nx.caseId; }
+      else route();
+    };
+    $('#sdX', el).onclick = close; $('#sdDone', el).onclick = close;
+  }
+  /* 📤 Send again buttons on a client's page */
+  async function wireResend(c) {
+    const recs = (await PdfStore.all()).filter(r => r.caseId === c.id).sort((a, b) => b.created - a.created);
+    if (!recs.length || location.hash !== '#/case/' + c.id) return;
+    const seen = {};
+    recs.forEach(r => {
+      if (r.kind === 'followup') {
+        if (seen[r.meetingId]) return; seen[r.meetingId] = 1;
+        const li = $(`.timeline li[data-mid="${r.meetingId}"]`); if (!li || $('.tl-resend', li)) return;
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'btn sm tl-resend'; b.textContent = r.sent ? '📤 Send PDF again' : '📤 Send PDF (not sent yet)';
+        b.onclick = () => resendPdf(r.key); li.insertBefore(b, $('.tl-del', li));
+      } else if (r.kind === 'summary' && !seen.summary) {
+        seen.summary = 1;
+        const host = $('#resendPS'); if (!host) return;
+        const d = new Date(r.created), p = n => String(n).padStart(2, '0');
+        host.innerHTML = `<button type="button" class="btn block">📤 Send last summary PDF again (${p(d.getDate())}/${p(d.getMonth() + 1)})</button>`;
+        $('button', host).onclick = () => resendPdf(r.key);
+      }
+    });
   }
 
   /* ---------- settings ---------- */
@@ -1064,29 +1167,13 @@
       file = new File([blob], `${(d.letter.title || 'Follow-up').replace(/[^\w一-鿿 .-]+/g, '')} - ${name.replace(/[^\w一-鿿 .-]+/g, '')}.pdf`, {type: 'application/pdf'});
       window.__lastPdf = blob;
     }
-    const savedM = FU.applyToFarm(target, d, {date: todayISO(), sentPdf: withPdf});
+    const savedM = FU.applyToFarm(target, d, {date: todayISO(), sentPdf: false});   // marked sent once the phone confirms the share
     const next = {caseId: target.id, meetingId: savedM.id};
     saveCases();
     const wa = d.whatsapp, caseId = target.id;
     rec = null; recPhotos = []; saveRec();
     if (!withPdf) { pendingNext = next; if (location.hash === '#/case/' + caseId) route(); else location.hash = '#/case/' + caseId; return; }
-    const url = URL.createObjectURL(blob);
-    const canShare = navigator.canShare && navigator.canShare({files: [file]});
-    const el = sheet(`<h3>Ready to send</h3><p><b>${esc(file.name)}</b> · ${(blob.size / 1024).toFixed(0)} KB<br>Saved to ${esc(target.client.name)}'s farm record.</p>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        ${canShare ? '<button class="btn primary block" id="shr">Send PDF to client…</button>' : ''}
-        <button class="btn block" id="cpy">Copy WhatsApp message</button>
-        <a class="btn ${canShare ? '' : 'primary'} block" href="${url}" download="${esc(file.name)}">Save / open PDF</a>
-        <button class="btn ghost block" id="done">Done</button></div>
-      <p class="muted" style="margin-top:8px">Tip: copy the message first, then send the PDF in WhatsApp and paste the message with it.</p>`);
-    $('#sheet').dataset.lock = '1';
-    $('#cpy', el).onclick = async () => { try { await navigator.clipboard.writeText(wa); toast('Message copied'); } catch (e) { toast('Copy did not work; select the text in the review screen next time.'); } };
-    const s = $('#shr', el); if (s) s.onclick = async () => {
-      if (!(await confirmBox('Send to ' + name + '?', 'Check you pick the right chat in WhatsApp. The message is copied too, so you can paste it with the PDF.', 'Choose app'))) return;
-      try { await navigator.clipboard.writeText(wa); } catch (e) {}
-      try { await navigator.share({files: [file], text: wa}); } catch (e) { if (e.name !== 'AbortError') toast('Sharing failed. Use Save / open PDF.'); }
-    };
-    $('#done', el).onclick = () => { URL.revokeObjectURL(url); closeSheet(); pendingNext = next; if (location.hash === '#/case/' + caseId) route(); else location.hash = '#/case/' + caseId; };
+    await startSend({kind: 'followup', blob, fileName: file.name, caseId, meetingId: savedM.id, name, wa, next});
   }
 
   /* ---------- after saving a meeting: update REDEFINE Calendar and 定联 too ---------- */
@@ -1155,7 +1242,7 @@
       <button class="btn primary block" id="recC" style="margin:10px 0">🎙 Record a meeting</button>
       ${ms.length ? `<ol class="timeline">${ms.map(m => {
         const qa = FU.QUESTIONS.filter(q => m.qa && m.qa[q.k]);
-        return `<li><span class="tl-d">${esc(m.date)}${m.time ? ' · ' + esc(FU.timeLabel(m.time)) : ''}${(m.tags || []).length ? ' · ' + esc(m.tags.join(',')) : ''}</span><b>${esc(FU.typeLabel(m.type))}${m.outcome === 'closed' ? ' 🎉' : ''}${m.sentPdf ? ' · PDF sent' : ''}</b><p>${esc(m.summary)}</p>${m.nextStep ? `<p class="tl-n">Next: ${esc(m.nextStep)}${m.followUpDate ? ' · ' + esc(m.followUpDate) : ''}</p>` : ''}
+        return `<li data-mid="${esc(m.id)}"><span class="tl-d">${esc(m.date)}${m.time ? ' · ' + esc(FU.timeLabel(m.time)) : ''}${(m.tags || []).length ? ' · ' + esc(m.tags.join(',')) : ''}</span><b>${esc(FU.typeLabel(m.type))}${m.outcome === 'closed' ? ' 🎉' : ''}${m.sentPdf ? ' · PDF sent' : ''}</b><p>${esc(m.summary)}</p>${m.nextStep ? `<p class="tl-n">Next: ${esc(m.nextStep)}${m.followUpDate ? ' · ' + esc(m.followUpDate) : ''}</p>` : ''}
           ${qa.length ? `<details class="tl-qa"><summary>Guide answers (${qa.length})</summary>${qa.map(q => `<p><b>${esc(q.zh)}</b> ${esc(m.qa[q.k])}</p>`).join('')}</details>` : ''}${m.nextStep || m.followUpDate ? `<a class="tl-cal" target="_blank" rel="noopener" href="${esc(FU.calendarLink(settings.calendarUrl, {name: c.client.name, nextStep: m.nextStep, followUpDate: m.followUpDate}))}">📅 Add this follow-up to REDEFINE Calendar</a>` : ''}<button class="tinylink tl-del" data-m="${m.id}">delete</button></li>`;
       }).join('')}</ol>` : ''}
       ${(t.family || t.work || (t.cares || []).length || (t.objections || []).length) ? `<div class="traits">${t.family ? `<p><b>Family</b> ${esc(t.family)}</p>` : ''}${t.work ? `<p><b>Work</b> ${esc(t.work)}</p>` : ''}${t.personality ? `<p><b>Personality</b> ${esc(t.personality)}</p>` : ''}${(t.cares || []).length ? `<p><b>Cares about</b> ${esc(t.cares.join(', '))}</p>` : ''}${(t.objections || []).length ? `<p><b>Concerns</b> ${esc(t.objections.join(', '))}</p>` : ''}</div>` : ''}
@@ -1621,6 +1708,7 @@
   }
 
   route();
+  resumeSend();
   syncNow();
   prPull('quiet');
 })();

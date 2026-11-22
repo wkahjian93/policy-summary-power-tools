@@ -11,6 +11,8 @@ On Field (formerly Policy Summary Power Tools) is one app for the field: record 
 5. **Review.** Every number the AI heard is listed; tick each one after checking, and the PDF button stays locked until you do. Edit any text, add or remove concept pages.
 6. **Create PDF & send.** The message is copied; share the PDF to the client in WhatsApp and paste the message. Or tap **Save only** to keep the record without a PDF.
 
+**If sending fails, just tap Send again.** The PDF is kept on the phone the moment it is made, so nothing needs redoing: the send screen stays open when the app refreshes, comes back by itself if the phone reloads the app after WhatsApp, and every button can be tapped as often as needed. Each tap on Send copies the message again. On iPhone only the PDF goes to WhatsApp, so paste the message. If the share menu keeps failing, use **Save / open PDF** and attach it in WhatsApp, or **Open WhatsApp with the message only**. After tapping Done, the client's page has **📤 Send PDF again** (follow-ups in the farm timeline, summaries at the top) for 30 days on that device.
+
 The follow-up PDF: a personal letter (what we talked about, what matters to you, my suggestion and why, next step), the chosen concept pages, photos of your notes, and an About me page with your name card. Concept pages come from the REDEFINE medical card and income protection lessons; their numbers are marked illustrative and they name no products.
 
 ## Client farm

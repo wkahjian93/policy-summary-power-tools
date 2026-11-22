@@ -265,3 +265,7 @@ a.btn.nx{text-decoration:none}
 .ac-list li{margin-bottom:8px}
 .ac-list span{display:block;font-size:13px;color:var(--muted)}
 .ok-box{background:#E5F4EF;border-color:#BFE3D6}
+.send-msg{min-height:20px;margin:10px 0 4px;font-weight:600;color:var(--navy,#16244a)}
+.ok-t{color:#1a7f4b;font-weight:700}
+.tl-resend{margin:6px 8px 0 0}
+#resendPS:not(:empty){margin-bottom:10px}
