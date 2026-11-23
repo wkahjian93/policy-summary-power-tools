@@ -97,6 +97,16 @@ AI is shared by the whole team through the team server: about 300 AI reads a day
 
 **Where to find it:** the **📄 Summary** tab at the bottom, the **📄 Policy summary** card on Home, or the **📄 Policy summary** box at the top of any client or prospect page (totals, See summary & create PDF, + Add more policies).
 
+### English / 中文
+
+The summary screen and the comparison screen both have an **English | 中文** switch above the preview. It is remembered for each client (and syncs with them). The 中文 PDF uses the same layout in natural Simplified Chinese:
+- Insurer, product and benefit names stay exactly as printed.
+- Key terms keep their English short form, e.g. 严重疾病 (CI), 完全永久残废 (TPD).
+- Short amounts read the way clients say them (RM30万, RM150万); full amounts stay as RM600,000.
+- Dates are written 2026年11月23日. The file is named 保单总结 / 保单比较, and the WhatsApp message is in Chinese too.
+
+English PDFs are exactly as before.
+
 ### ⚖️ Compare policies & proposals
 
 1. On the client's page, tap **+ Add a proposal to compare**. The tray is set to **New proposal**: snap or upload the benefit illustration / proposal PDF (any insurer), or key it in and pick **Proposal (not bought yet)** at the top of the form. Proposals are listed separately and **never count in the policy summary**.
@@ -162,7 +172,7 @@ Clients are locked with your passphrase before they leave the device. The server
 ## For maintenance
 
 - `docs/` is the app. `logic.js` handles recognition and calculations, `report.js` builds the PDF pages, `app.js` runs the screens, and `config.js` holds the server address.
-- `node test.js` runs 156 checks covering recognition, messy numbers, the never-guess rules, the summary maths, the 三访 report, activity stages, the Calendar link and the comparison.
+- `node test.js` runs 164 checks covering recognition, messy numbers, the never-guess rules, the summary maths, the 三访 report, activity stages, the Calendar link, the comparison and the 中文 PDFs.
 - `node serve.js` previews the app at http://localhost:5193.
 - `samples/` holds the sample PDF made by the app.
 - `node test-sync-server.js` runs the real team server code in memory on port 5194 to test sync (open localhost:5194 and 127.0.0.1:5194 as two devices; team code `test-team-code`).

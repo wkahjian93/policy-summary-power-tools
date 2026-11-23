@@ -352,5 +352,21 @@ console.log('Policy / proposal comparison');
   eq('AI reads term, paying term and riders', [ai.coverTo, ai.payYears, ai.benefits.map(b => b.rider)], [100, 20, [false, true]]);
 }
 
+console.log('English / 中文 PDFs');
+{
+  const R = require('./docs/report.js').Report, c = sampleCase(PS), txt = h => h.join(' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  const en = txt(R.build(c, {name: 'A'}, PS, {})), zh = txt(R.build(c, {name: 'A'}, PS, {lang: 'zh'}));
+  eq('English summary unchanged in wording (no Chinese labels)', [/Policy Summary/.test(en), /If the unexpected happens/.test(en), /保单/.test(en)], [true, true, false]);
+  eq('中文 summary: title, hero, 万 amounts, Chinese date', [/保单总结/.test(zh), /万一不幸发生/.test(zh), /RM60万/.test(zh), /\d{4}年\d{1,2}月\d{1,2}日/.test(zh)], [true, true, true, true]);
+  eq('中文 keeps insurer and product names as printed', [/Great Eastern Life/.test(zh), /Critical illness plan \(sample\)/.test(zh)], [true, true]);
+  eq('中文 key terms keep the English short form', [/严重疾病 \(CI\)/.test(zh), /完全永久残废 \(TPD\)/.test(zh)], [true, true]);
+  eq('中文 summary leaves the proposal out too', /sample proposal/.test(zh), false);
+  const ids = [c.policies[0].id, c.policies.find(PS.isProposal).id];
+  const cz = txt(R.buildCompare(c, ids, {name: 'A'}, PS, {lang: 'zh'})), ce = txt(R.buildCompare(c, ids, {name: 'A'}, PS, {}));
+  eq('中文 comparison: title, columns, differences, replacement note', [/保单比较/.test(cz), /现有 A/.test(cz), /建议 B/.test(cz), /主要差别一览/.test(cz), /考虑以新保单取代/.test(cz)], [true, true, true, true, true]);
+  eq('English comparison stays English', [/Policy Comparison/.test(ce), /比较/.test(ce)], [true, false]);
+  eq('building 中文 does not leak into the next English build', /保单/.test(txt(R.build(c, {name: 'A'}, PS, {}))), false);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

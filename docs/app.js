@@ -598,7 +598,7 @@
   /* ---------- summary + PDF ---------- */
   function summary(c) {
     const checks = PS.pendingChecks(c);
-    const pages = Report.build(c, agent(), PS, {incomplete: checks.length > 0});
+    const pages = Report.build(c, agent(), PS, {incomplete: checks.length > 0, lang: pdfLang(c)});
     const fit = Math.min(1, (Math.min(innerWidth, 560) - 28) / 794);
     app.innerHTML = bar('Summary · ' + (c.client.name || ''), '#/case/' + c.id) + `
       <div class="wrap">
@@ -607,6 +607,7 @@
           return `<li><a href="#/case/${c.id}/policy/${p.id}">${esc(p.insurer || 'Policy')}</a>: ${esc(k.why)}</li>`;
         }).join('')}</ul></div>` : ''}
         ${settings.name ? '' : '<div class="checks"><b>Your name is missing</b> from the PDF footer. <a href="#" id="setN">Add it in Settings</a>.</div>'}
+        ${langSeg(c)}
         <div class="seg" role="group"><button aria-pressed="true" data-v="0">At a glance</button><button aria-pressed="false" data-v="1">Side by side</button><button aria-pressed="false" data-v="2">Details</button></div>
         <div class="pages" id="pages">${pages.map((h, i) => `<div class="pagebox" data-i="${i}" style="width:${Math.round(794 * fit)}px;height:${Math.round(1123 * fit)}px">${h.replace('class="rp-page"', `class="rp-page" style="transform:scale(${fit})"`)}</div>`).join('')}</div>
       </div>
@@ -617,11 +618,26 @@
       scrollTo({top: target.getBoundingClientRect().top + scrollY - 70, behavior: 'smooth'});
     });
     const sn = $('#setN'); if (sn) sn.onclick = e => { e.preventDefault(); openSettings(); };
+    wireLang(c, () => summary(c));
     $('#mk').onclick = async () => {
       if (checks.length && !(await confirmBox('Create PDF with incomplete info?', checks.length + ' item' + (checks.length > 1 ? 's are' : ' is') + ' not confirmed. Missing amounts show as <b>Not stated</b> and are left out of the totals. Page 1 tells the client some details were not available.', 'Create anyway'))) return;
-      makePDF(c, pages);
+      const T = PDF_TXT[pdfLang(c)], nm = c.client.name || '';
+      makePDF(c, pages, {kind: 'summary', fname: `${T.summary(safeName(c.client.name))} - ${new Date().toISOString().slice(0, 10)}.pdf`, wa: T.waS(nm)});
     };
   }
+
+  /* ---------- PDF language: English / 中文, remembered per client (synced with the client) ---------- */
+  const pdfLang = c => c.pdfLang === 'zh' ? 'zh' : 'en';
+  const langSeg = c => `<div class="seg langseg" role="group" aria-label="PDF language"><button type="button" data-lang="en" aria-pressed="${pdfLang(c) === 'en'}">English</button><button type="button" data-lang="zh" aria-pressed="${pdfLang(c) === 'zh'}">中文</button></div>`;
+  function wireLang(c, redraw) { $$('[data-lang]').forEach(b => b.onclick = () => { if (pdfLang(c) === b.dataset.lang) return; c.pdfLang = b.dataset.lang; c.updated = new Date().toISOString(); saveCases(); keepScroll(redraw); }); }
+  const safeName = n => (n || 'Client').replace(/[^\w一-鿿 .-]+/g, '').trim() || 'Client';
+  const hi = n => n ? n + (/[一-鿿]$/.test(n) ? '' : ' ') + '您好，' : '您好，';
+  const PDF_TXT = {
+    en: {summary: n => `Policy Summary - ${n}`, compare: n => `Policy Comparison - ${n}`,
+      waS: n => 'Hi ' + n + ', here is the summary of your insurance policies we went through.', waC: n => 'Hi ' + n + ', here is the side-by-side comparison of the plans we discussed.'},
+    zh: {summary: n => `保单总结 - ${n}`, compare: n => `保单比较 - ${n}`,
+      waS: n => hi(n) + '这是我们一起看过的保单总结，请参考。', waC: n => hi(n) + '这是我们讨论过的计划比较，方便您对照参考。'}
+  };
 
   /* ---------- ⚖️ compare policies and proposals (same template as the summary) ---------- */
   function compareScreen(c) {
@@ -633,7 +649,7 @@
     const chosen = sel.map(id => all.find(p => p.id === id));
     const mixed = chosen.some(PS.isProposal) && chosen.some(p => !PS.isProposal(p));
     const checks = PS.pendingChecks({policies: chosen}, true);
-    const pages = sel.length >= 2 ? Report.buildCompare(c, sel, agent(), PS, {replace: mixed && replace}) : [];
+    const pages = sel.length >= 2 ? Report.buildCompare(c, sel, agent(), PS, {replace: mixed && replace, lang: pdfLang(c)}) : [];
     const fit = Math.min(1, (Math.min(innerWidth, 560) - 28) / 794);
     app.innerHTML = bar('Compare · ' + (c.client.name || ''), '#/case/' + c.id) + `<div class="wrap">
       <div class="card"><h2>Choose 2 to 4 to compare</h2>
@@ -642,6 +658,7 @@
         <button type="button" class="btn block" id="cmpProp" style="margin-top:10px">+ Add a proposal</button>
         ${mixed ? `<label class="chk" style="margin-top:10px"><input type="checkbox" id="cmpRep" ${replace ? 'checked' : ''}> The proposal <b>replaces</b> the existing polic${chosen.filter(p => !PS.isProposal(p)).length > 1 ? 'ies' : 'y'} ticked (page 2 totals leave ${chosen.filter(p => !PS.isProposal(p)).length > 1 ? 'them' : 'it'} out)</label>` : ''}
       </div>
+      ${langSeg(c)}
       ${checks.length ? `<div class="checks"><b>${checks.length} item${checks.length > 1 ? 's' : ''} not confirmed</b> in the plans chosen. Missing amounts show as "Not stated". <a href="#/case/${c.id}/policy/${checks[0].policyId}">Check now</a></div>` : ''}
       ${mixed ? '<div class="checks">Existing policy vs proposal: the PDF adds a short note on what the client may lose by replacing a policy. Follow the replacement disclosure process before any switch.</div>' : ''}
       ${pages.length ? `<div class="pages">${pages.map((h, i) => `<div class="pagebox" style="width:${Math.round(794 * fit)}px;height:${Math.round(1123 * fit)}px">${h.replace('class="rp-page"', `class="rp-page" style="transform:scale(${fit})"`)}</div>`).join('')}</div>` : '<div class="empty">Tick at least 2.</div>'}
@@ -650,11 +667,12 @@
     const store = (ids, rep) => { c.cmp = {ids, replace: rep}; c.updated = new Date().toISOString(); saveCases(); keepScroll(() => compareScreen(c)); };
     $$('.cmp-it').forEach(b => b.onclick = () => { const id = b.dataset.id, i = sel.indexOf(id); if (i >= 0) sel.splice(i, 1); else if (sel.length >= 4) return toast('Up to 4 at a time. Untick one first.'); else sel.push(id); store(sel, replace); });
     const rp = $('#cmpRep'); if (rp) rp.onchange = () => store(sel, rp.checked);
+    wireLang(c, () => compareScreen(c));
     $('#cmpProp').onclick = () => { openTrayFor = c.id; openTrayRole = 'proposal'; location.hash = '#/case/' + c.id; };
     const mk = $('#cmpMk'); if (mk) mk.onclick = async () => {
       if (checks.length && !(await confirmBox('Create with unconfirmed items?', checks.length + ' item' + (checks.length > 1 ? 's are' : ' is') + ' not confirmed. Missing amounts show as <b>Not stated</b>.', 'Create anyway'))) return;
-      makePDF(c, pages, {kind: 'compare', fname: `Policy Comparison - ${(c.client.name || 'Client').replace(/[^\w .-]+/g, '')} - ${new Date().toISOString().slice(0, 10)}.pdf`,
-        wa: 'Hi ' + (c.client.name || '') + ', here is the side-by-side comparison of the plans we discussed.'});
+      const T = PDF_TXT[pdfLang(c)];
+      makePDF(c, pages, {kind: 'compare', fname: `${T.compare(safeName(c.client.name))} - ${new Date().toISOString().slice(0, 10)}.pdf`, wa: T.waC(c.client.name || '')});
     };
   }
   function keepScroll(fn) { const y = scrollY; fn(); scrollTo(0, y); }

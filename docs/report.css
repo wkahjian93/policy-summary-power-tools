@@ -197,3 +197,8 @@
 .rp-cmp thead th{padding:8px 8px 7px}
 .rp-diff{margin-top:10px;padding:10px 14px}
 .rp-diff li{font-size:11px;line-height:1.4;margin:1px 0}
+
+/* 中文 pages: Chinese system fonts (iPhone PingFang, Windows YaHei, Android Noto) */
+.rp-page.rp-zh{font-family:Inter,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC","Noto Sans CJK SC",system-ui,sans-serif}
+.rp-zh .rp-client h1,.rp-zh .rp-client h2,.rp-zh h3,.rp-zh .rp-hero b,.rp-zh .rp-tile-v,.rp-zh .rp-hero-side b{font-family:Fraunces,Georgia,"PingFang SC","Microsoft YaHei","Noto Sans SC",serif}
+.rp-zh .rp-client span,.rp-zh .rp-head-r b,.rp-zh .rp-cmp tr.sec td,.rp-zh .rp-cmp thead th em{letter-spacing:.06em}
