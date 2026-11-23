@@ -961,7 +961,7 @@
       <div class="card mic-card">
         <p class="muted">Tell it like you'd tell your leader. Mix Mandarin, Hokkien, Cantonese, English and Malay freely.</p>
         <button class="mic" id="mic" aria-label="Start recording"><span></span></button>
-        <div class="mic-time" id="micT">Tap to record · up to 5 min</div>
+        <div class="mic-time" id="micT">Tap to record · up to 10 min</div>
         ${rec.transcript ? `<p class="muted" style="margin-top:8px">${rec.transcript.length} characters recorded so far. Recording again adds to it.</p>` : ''}
       </div>
       <details class="card guide" ${load('pspt.guideClosed', false) ? '' : 'open'} id="guideQ"><summary><b>Guide: what to cover</b> <span class="muted">(no need to follow all)</span></summary>
@@ -1006,46 +1006,85 @@
     ['#phCamIn', '#phIn'].forEach(s => { $(s).onchange = e => { const f = [...e.target.files]; e.target.value = ''; if (f.length) add(f); }; });
   }
 
-  /* ---------- microphone ---------- */
+  /* ---------- microphone ----------
+     Long notes are recorded in pieces of about 90 seconds. Each piece is a complete audio file (no streaming
+     fragments) that is turned into text on its own; the texts are joined in order. Sending one long file made the
+     speech-to-text read only its start (a 5-minute note came back as one sentence). */
+  const SEG_MS = 90000, MAX_REC_S = 600;
+  const recType = () => ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || '';
+  function segRecorder(stream, segMs) {
+    const type = recType(), parts = [];
+    let cur = null, n = 0, open = 0, stopping = false, done;
+    const finished = new Promise(r => { done = r; });
+    const startOne = () => {
+      const i = n++, chunks = [];
+      const r = new MediaRecorder(stream, type ? {mimeType: type, audioBitsPerSecond: 32000} : undefined);
+      r.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+      r.onstop = () => {
+        const b = new Blob(chunks, {type: (r.mimeType || type || 'audio/mp4').split(';')[0]});
+        if (b.size > 1500) parts[i] = b;
+        if (--open === 0 && stopping) { stream.getTracks().forEach(t => t.stop()); done(parts.filter(Boolean)); }
+      };
+      r.start(); open++; cur = r;   // no timeslice: each piece ends as one whole file
+    };
+    startOne();
+    const timer = setInterval(() => { if (stopping) return; const old = cur; startOne(); old.stop(); }, segMs);   // the next piece starts before the old one stops, so no words fall in a gap
+    return {
+      finished,
+      stop() { if (stopping) return; stopping = true; clearInterval(timer); if (cur.state !== 'inactive') cur.stop(); },
+      get active() { return !stopping; }
+    };
+  }
+  /* pieces -> text in order; a failed piece is tried once more and the text already heard is kept */
+  async function partsToText(parts, hint, onProgress) {
+    const out = []; let failed = 0, lastErr = null;
+    for (let i = 0; i < parts.length; i++) {
+      onProgress && onProgress(i + 1, parts.length);
+      const prev = out.join(' ').slice(-200);
+      let text = null;
+      for (let t = 0; t < 2 && text == null; t++) {
+        try { const r = await post({op: 'transcribe', audio: await blobB64(parts[i]), mime: parts[i].type, hint: (hint + (prev ? ' Earlier in this note: ' + prev : '')).slice(0, 900)}); text = String(r.text || '').trim(); }
+        catch (e) { lastErr = e; if (['invalid_request', 'no_api_key', 'bad_api_key', 'no_credit', 'daily_limit', 'unauthorized', 'offline'].includes(e.code)) throw e; }
+      }
+      if (text == null) { failed++; out.push(`[part ${i + 1} of ${parts.length} could not be converted]`); } else if (text) out.push(text);
+    }
+    if (failed === parts.length) throw lastErr || {code: 'upstream_error'};
+    return {text: out.join('\n').trim(), failed};
+  }
+
   async function startMic(c) {
     if (!navigator.mediaDevices || !window.MediaRecorder) return toast('This browser cannot record. Use "Type instead" with your keyboard mic.');
     let stream;
     try { stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}}); }
     catch (e) { return sheet('<h3>Microphone not allowed</h3><p>Allow the microphone for this app in your phone settings (Safari / Chrome → this site → Microphone), or use "Type instead" with your keyboard mic.</p><button class="btn block" data-close>OK</button>'); }
-    const type = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'].find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || '';
-    const chunks = [];
-    mediaRec = new MediaRecorder(stream, type ? {mimeType: type, audioBitsPerSecond: 48000} : undefined);
-    mediaRec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
-    mediaRec.onstop = async () => {
-      stream.getTracks().forEach(t => t.stop());
-      clearInterval(recTimer); mediaRec = null;
-      const blob = new Blob(chunks, {type: (type || 'audio/mp4').split(';')[0]});
-      if (blob.size < 2000) { toast('Too short. Try again.'); return route(); }
-      await transcribeBlob(blob, c);
-    };
-    mediaRec.start(1000);
-    const t0 = Date.now();
+    const sr = segRecorder(stream, SEG_MS), t0 = Date.now();
+    mediaRec = sr;
     $('#mic').classList.add('on'); $('#mic').setAttribute('aria-label', 'Stop recording');
     recTimer = setInterval(() => {
       const s = Math.floor((Date.now() - t0) / 1000), el = $('#micT');
-      if (el) el.textContent = `● ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} · tap to stop`;
-      if (s >= 300) stopMic();
+      if (el) el.textContent = `● ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} · tap to stop${s >= MAX_REC_S - 60 ? ' · stops at 10:00' : ''}`;
+      if (s >= MAX_REC_S) stopMic();
     }, 500);
+    const parts = await sr.finished;
+    clearInterval(recTimer); mediaRec = null;
+    if (!parts.length) { toast('Too short. Try again.'); return route(); }
+    await transcribeParts(parts, c);
   }
-  function stopMic() { if (mediaRec && mediaRec.state !== 'inactive') mediaRec.stop(); }
+  function stopMic() { if (mediaRec && mediaRec.active) mediaRec.stop(); }
 
   const blobB64 = blob => new Promise((ok, bad) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.onerror = bad; r.readAsDataURL(blob); });
-  async function transcribeBlob(blob, c) {
+  async function transcribeParts(parts, c) {
     if (!session() && !(await signIn())) { toast('Sign in to turn voice into text, or use "Type instead".'); return route(); }
-    sheet('<h3>Turning your voice into text…</h3><div class="spin"></div><p style="text-align:center">Usually 5–20 seconds.</p>');
+    const box = sheet(`<h3>Turning your voice into text…</h3><div class="spin"></div><p style="text-align:center" id="trP">${parts.length > 1 ? `Part 1 of ${parts.length}` : 'Usually 5–20 seconds.'}</p>`);
     $('#sheet').dataset.lock = '1';
     try {
       const name = c ? c.client.name + (c.client.nickname ? ' / ' + c.client.nickname : '') : '';
-      const r = await post({op: 'transcribe', audio: await blobB64(blob), mime: blob.type, hint: FU.hintFor(name)});
-      const text = String(r.text || '').trim();
+      const r = await partsToText(parts, FU.hintFor(name), (i, n) => { const p = $('#trP', box); if (p && n > 1) p.textContent = `Part ${i} of ${n} · about 10–20 seconds each`; });
+      const text = r.text;
       closeSheet();
       if (!text) { toast('Nothing was heard. Try again closer to the phone.'); return route(); }
       rec.transcript = (rec.transcript ? rec.transcript + '\n' : '') + text; rec.step = 'transcript'; saveRec(); route();
+      if (r.failed) toast(`${r.failed} part${r.failed > 1 ? 's' : ''} could not be converted (marked in the text). Add it with "Add more by voice" or type it.`);
     } catch (e) {
       closeSheet();
       const msg = e.code === 'invalid_request' ? 'Voice needs the latest team server update. For now, use "Type instead" with your keyboard mic.' : AI_ERR[e.code] || 'Could not turn the voice into text (' + (e.code || 'error') + '). Try again, or use "Type instead".';
@@ -1443,20 +1482,16 @@
     if (!session() && !(await signIn())) return;
     let stream;
     try { stream = await navigator.mediaDevices.getUserMedia({audio: true}); } catch (e) { return toast('Microphone not allowed. Use the keyboard mic.'); }
-    const type = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'].find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || '';
-    const chunks = [], t0 = Date.now();
-    miniRec = new MediaRecorder(stream, type ? {mimeType: type, audioBitsPerSecond: 48000} : undefined);
-    miniRec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
-    const tick = setInterval(() => { const s = Math.floor((Date.now() - t0) / 1000); label.textContent = `● ${s}s · tap again to stop`; if (s >= 180) miniRec && miniRec.stop(); }, 500);
-    miniRec.onstop = async () => {
-      clearInterval(tick); stream.getTracks().forEach(t => t.stop()); miniRec = null; btn.textContent = '🎙 Speak into the box';
-      const blob = new Blob(chunks, {type: (type || 'audio/mp4').split(';')[0]});
-      if (blob.size < 2000) { label.textContent = 'Too short.'; return; }
-      label.textContent = 'Turning voice into text…';
-      try { const r = await post({op: 'transcribe', audio: await blobB64(blob), mime: blob.type, hint: FU.HINT}); label.textContent = ''; if (r.text) onText(String(r.text).trim()); }
-      catch (e) { label.textContent = e.code === 'invalid_request' ? 'Voice needs the team server update.' : 'Could not convert. Try again or type.'; }
-    };
-    miniRec.start(1000); btn.textContent = '■ Stop';
+    const t0 = Date.now(), sr = segRecorder(stream, SEG_MS);
+    miniRec = sr; btn.textContent = '■ Stop';
+    const tick = setInterval(() => { const s = Math.floor((Date.now() - t0) / 1000); label.textContent = `● ${s}s · tap again to stop`; if (s >= MAX_REC_S) sr.stop(); }, 500);
+    const parts = await sr.finished;
+    clearInterval(tick); miniRec = null; btn.textContent = '🎙 Speak into the box';
+    if (!parts.length) { label.textContent = 'Too short.'; return; }
+    try {
+      const r = await partsToText(parts, FU.HINT, (i, n) => { label.textContent = n > 1 ? `Turning voice into text… part ${i} of ${n}` : 'Turning voice into text…'; });
+      label.textContent = r.failed ? 'Some of it could not be converted (marked).' : ''; if (r.text) onText(r.text);
+    } catch (e) { label.textContent = e.code === 'invalid_request' ? 'Voice needs the team server update.' : 'Could not convert. Try again or type.'; }
   }
 
   /* leader view: numbers only, from the team server */
