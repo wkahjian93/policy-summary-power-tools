@@ -330,5 +330,27 @@ eq('RM format', [PS.rm(1500000, {short: true}), PS.rm(250000, {short: true}), PS
   eq('prospecting: lead not counted -> its quick logs removed', cs[0].meetings.length, 0);
 }
 
+console.log('Policy / proposal comparison');
+{
+  const c = sampleCase(PS), prop = c.policies.find(PS.isProposal), ge = c.policies[0];
+  eq('proposal never counts in the summary (death stays 600k)', PS.summarise(c).cats.death.total, 600000);
+  eq('proposal checks are left out of the summary checks', PS.pendingChecks({policies: [Object.assign({}, prop, {checks: {premium: 'x'}})]}).length, 0);
+  eq('...but listed for the comparison', PS.pendingChecks({policies: [Object.assign({}, prop, {checks: {premium: 'x'}})]}, true).length, 1);
+  const cols = [ge, prop].map(PS.compareCol);
+  eq('columns: cover, medical annual, waiver, cover-to age', [cols[1].v.death, cols[1].v.ci, cols[1].v.medical, cols[1].waiver, cols[1].end.age, cols[0].end.age], [500000, 300000, 2000000, true, 100, 100]);
+  eq('riders listed by name', cols[1].riders, ['Critical illness rider', 'Early critical illness rider', 'Medical rider', 'Payor waiver rider']);
+  const d = PS.keyDiffs(cols);
+  eq('neutral differences vs first column', d.filter(x => x.kind === 'diff').map(x => [x.cat, x.delta]), [['death', 200000], ['tpd', 200000], ['ci', 200000], ['eci', 50000], ['medical', 500000]]);
+  eq('premium difference per year', d.find(x => x.kind === 'premium').delta, 420 * 12 - 350 * 12);
+  const pol = PS.compareCol(c.policies[3]), mis = PS.keyDiffs([pol, PS.compareCol(prop)]);
+  eq('cover only in the proposal is flagged "only"', mis.filter(x => x.kind === 'only').map(x => x.cat), ['tpd', 'ci', 'eci', 'medical', 'waiver']);
+  eq('cover only in the first column is flagged "missing"', mis.filter(x => x.kind === 'missing').map(x => x.cat), ['accident', 'hospital']);
+  const W = PS.coverWith(c, [prop], []), R = PS.coverWith(c, [prop], [ge.id]);
+  eq('total cover: today vs added proposal', [W.today.cats.death.total, W.withEach[0].s.cats.death.total], [600000, 1100000]);
+  eq('total cover when it replaces the first policy', R.withEach[0].s.cats.death.total, 800000);
+  const ai = PS.fromAI({policies: [{insurer: 'Great Eastern', productName: 'X', status: 'unknown', premium: 300, premiumFrequency: 'monthly', coverageToAge: 100, premiumTermYears: 20, benefits: [{name: 'Basic death', category: 'death', amount: 100000, rider: false}, {name: 'CI rider', category: 'ci', amount: 50000, rider: true}]}]}, {})[0];
+  eq('AI reads term, paying term and riders', [ai.coverTo, ai.payYears, ai.benefits.map(b => b.rider)], [100, 20, [false, true]]);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

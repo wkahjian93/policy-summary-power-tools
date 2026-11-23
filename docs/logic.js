@@ -130,11 +130,13 @@
       'RULES: Copy only what is printed. Never estimate, calculate or fill in a value that is not visible: use null. Amounts are numbers in RM without commas. Do not output any identity card (MyKad/NRIC) number, address, phone or bank details. For policy numbers output only the last 4 characters.',
       'List every benefit / rider separately using the exact name printed. Give each a category: death, tpd, ci (critical illness / late stage), eci (early stage or multi-stage CI), accident, medical (medical card / hospital & surgical), hospital (daily hospital income), waiver, other.',
       'For medical: annualLimit, lifetimeLimit (set lifetimeUnlimited true if it says no lifetime limit/unlimited), roomBoard (per day), deductible.',
+      'Mark each benefit "rider": true when it is an added rider / supplementary benefit, false for the basic plan. Policy term: coverageToAge (age the cover ends, e.g. 100), coverageTermYears (if the term is given in years instead) and premiumTermYears (how many years premiums are paid), only when printed.',
+      'A page can also be a benefit illustration or proposal for a plan not bought yet: read it the same way (use the proposed premium and benefits; status "unknown").',
       'Set "sure": false on any benefit where the amount or category is hard to read or you are unsure. Put the names of unclear policy fields in "unclear".',
       'Insurers you may see: ' + names + '.',
       taught ? 'The agent has confirmed these benefit name categories before: ' + taught + '.' : '',
       'Answer with JSON only, in this shape:',
-      '{"pageKind":"schedule|illustration|statement|portal|other","policies":[{"insurer":"","productName":"","policyNoLast4":"","lifeAssured":"","planType":"traditional|investment-linked|takaful|medical|term|other","status":"inforce|lapsed|surrendered|matured|unknown","startDate":"YYYY-MM-DD or null","premium":null,"premiumFrequency":"monthly|quarterly|half-yearly|yearly|single|null","cashValue":null,"cashValueDate":"YYYY-MM-DD or null","bonus":null,"benefits":[{"name":"","category":"","amount":null,"untilAge":null,"annualLimit":null,"lifetimeLimit":null,"lifetimeUnlimited":false,"roomBoard":null,"deductible":null,"sure":true}],"unclear":[]}],"notes":""}'
+      '{"pageKind":"schedule|illustration|statement|portal|other","policies":[{"insurer":"","productName":"","policyNoLast4":"","lifeAssured":"","planType":"traditional|investment-linked|takaful|medical|term|other","status":"inforce|lapsed|surrendered|matured|unknown","startDate":"YYYY-MM-DD or null","premium":null,"premiumFrequency":"monthly|quarterly|half-yearly|yearly|single|null","coverageToAge":null,"coverageTermYears":null,"premiumTermYears":null,"cashValue":null,"cashValueDate":"YYYY-MM-DD or null","bonus":null,"benefits":[{"name":"","category":"","amount":null,"untilAge":null,"annualLimit":null,"lifetimeLimit":null,"lifetimeUnlimited":false,"roomBoard":null,"deductible":null,"rider":false,"sure":true}],"unclear":[]}],"notes":""}'
     ].filter(Boolean).join('\n');
   }
 
@@ -160,6 +162,7 @@
         status: ['inforce', 'lapsed', 'surrendered', 'matured'].includes(p.status) ? p.status : 'unknown',
         startDate: cleanDate(p.startDate),
         premium: num(p.premium), premiumFreq: parseFreq(p.premiumFrequency),
+        coverTo: num(p.coverageToAge), coverYears: num(p.coverageTermYears), payYears: num(p.premiumTermYears),
         cashValue: num(p.cashValue), cashValueDate: cleanDate(p.cashValueDate),
         bonus: num(p.bonus),
         benefits: [], checks: {}
@@ -187,7 +190,7 @@
           amount: amt.value, untilAge: num(b.untilAge),
           annual: num(b.annualLimit), lifetime: life.value,
           lifetimeUnlimited: !!(b.lifetimeUnlimited || life.unlimited),
-          roomBoard: num(b.roomBoard), deductible: num(b.deductible)
+          roomBoard: num(b.roomBoard), deductible: num(b.deductible), rider: !!b.rider
         };
         if (b.either) ben.note = 'Paid once, on death or TPD';
         const why = [];
@@ -219,7 +222,7 @@
       if (!base) { out.push(p); continue; }
       for (const k of ['productName', 'policyNo', 'lifeAssured', 'startDate', 'premiumFreq', 'cashValueDate', 'insurerRaw'])
         if (!base[k] && p[k]) base[k] = p[k];
-      for (const k of ['premium', 'cashValue', 'bonus']) if (base[k] == null && p[k] != null) base[k] = p[k];
+      for (const k of ['premium', 'cashValue', 'bonus', 'coverTo', 'coverYears', 'payYears']) if (base[k] == null && p[k] != null) base[k] = p[k];
       if (base.status === 'unknown' && p.status !== 'unknown') base.status = p.status;
       if (base.planType === 'other' && p.planType !== 'other') base.planType = p.planType;
       for (const b of p.benefits) {
@@ -227,6 +230,7 @@
         if (!same) { base.benefits.push(b); continue; }
         for (const k of ['amount', 'untilAge', 'annual', 'lifetime', 'roomBoard', 'deductible']) if (same[k] == null && b[k] != null) same[k] = b[k];
         if (b.lifetimeUnlimited) same.lifetimeUnlimited = true;
+        if (b.rider) same.rider = true;
         if (same.check && !b.check && (same.amount != null || same.annual != null)) delete same.check;
       }
       Object.assign(base.checks, p.checks);
@@ -243,15 +247,17 @@
 
   function blankPolicy() {
     return {id: uid(), source: 'manual', insurer: '', insurerRaw: '', productName: '', policyNo: '', lifeAssured: '', planType: 'traditional',
-      status: 'inforce', startDate: '', premium: null, premiumFreq: 'monthly', cashValue: null, cashValueDate: '', bonus: null,
+      status: 'inforce', startDate: '', premium: null, premiumFreq: 'monthly', coverTo: null, coverYears: null, payYears: null, cashValue: null, cashValueDate: '', bonus: null,
       benefits: [blankBenefit('death')], checks: {}};
   }
-  const blankBenefit = cat => ({id: uid(), name: '', cat: cat || 'death', amount: null, untilAge: null, annual: null, lifetime: null, lifetimeUnlimited: false, roomBoard: null, deductible: null});
+  const blankBenefit = cat => ({id: uid(), name: '', cat: cat || 'death', amount: null, untilAge: null, annual: null, lifetime: null, lifetimeUnlimited: false, roomBoard: null, deductible: null, rider: false});
 
   /* everything still waiting for the agent */
-  function pendingChecks(c) {
+  const isProposal = p => !!p && p.role === 'proposal';
+  /* all = true also lists proposals (they are left out of the client's summary by default) */
+  function pendingChecks(c, all) {
     const out = [];
-    (c.policies || []).forEach(p => {
+    (c.policies || []).filter(p => all || !isProposal(p)).forEach(p => {
       Object.entries(p.checks || {}).forEach(([f, why]) => out.push({policyId: p.id, field: f, why}));
       p.benefits.forEach(b => { if (b.check) out.push({policyId: p.id, benefitId: b.id, why: b.check}); });
     });
@@ -259,7 +265,7 @@
   }
 
   /* ---------- the summary ---------- */
-  const counts = p => p.status === 'inforce' || p.status === 'unknown';
+  const counts = p => !isProposal(p) && (p.status === 'inforce' || p.status === 'unknown');
   function summarise(c) {
     const pols = (c.policies || []).filter(counts);
     const t = {};
@@ -290,7 +296,7 @@
     };
     const out = {cats: {}, medical: med, cash: {total: cash, n: cashN}, bonus: {total: bonus, n: bonusN},
       premium: {annual: prem, missing: premMissing}, policyCount: pols.length,
-      excluded: (c.policies || []).length - pols.length,
+      excluded: (c.policies || []).filter(p => !isProposal(p)).length - pols.length,
       insurers: [...new Set(pols.map(p => p.insurer).filter(Boolean))]};
     for (const id of CAT_IDS) out.cats[id] = {total: t[id].total, missing: t[id].missing, policies: t[id].policies.size, maxAge: t[id].maxAge, items: t[id].items, drop: firstDrop(t[id].items, c.client && c.client.age)};
     /* guideline comparison only when the client's income is given */
@@ -331,6 +337,56 @@
     return r;
   }
 
+  /* ---------- comparison: policies / proposals side by side ---------- */
+  /* where the cover ends: the stated term, else the latest "to age" among its benefits */
+  function coverEnd(p) {
+    if (p.coverTo) return {age: p.coverTo};
+    if (p.coverYears) return {years: p.coverYears};
+    const ages = p.benefits.map(b => b.untilAge).filter(a => a != null);
+    return ages.length ? {age: Math.max(...ages), fromBenefits: true} : null;
+  }
+  const CMP_CATS = ['death', 'tpd', 'ci', 'eci', 'accident', 'hospital'];
+  function compareCol(p) {
+    const r = policyRow(p), med = p.benefits.filter(b => b.cat === 'medical');
+    const best = k => med.reduce((m, b) => (b[k] != null && (m == null || b[k] > m) ? b[k] : m), null);
+    const v = {};
+    CMP_CATS.forEach(id => { v[id] = r[id].has ? (r[id].missing && !r[id].total ? 'unknown' : r[id].total) : null; });
+    v.medical = med.length ? (r.medical.total || (r.medical.missing ? 'unknown' : null)) : null;
+    return {p, id: p.id, proposal: isProposal(p), v,
+      medLifetime: med.length ? (med.some(b => b.lifetimeUnlimited) ? 'unlimited' : best('lifetime')) : null,
+      roomBoard: med.length ? best('roomBoard') : null, deductible: med.length ? best('deductible') : null,
+      waiver: r.waiver.has, premium: p.premium, freq: p.premiumFreq, annual: annualPremium(p), payYears: p.payYears || null,
+      end: coverEnd(p), cash: p.cashValue, bonus: p.bonus,
+      riders: p.benefits.filter(b => b.rider || b.cat === 'waiver').map(b => b.name).filter((n, i, a) => n && a.indexOf(n) === i)};
+  }
+  /* neutral differences of each column against the first one (the baseline). Never says which is better. */
+  function keyDiffs(cols) {
+    const out = [], base = cols[0];
+    if (!base) return out;
+    const num = x => typeof x === 'number' ? x : null;
+    cols.slice(1).forEach((c, ci) => {
+      ['death', 'tpd', 'ci', 'eci', 'medical', 'accident', 'hospital'].forEach(id => {
+        const a = base.v[id], b = c.v[id];
+        if (a == null && b != null) out.push({kind: 'only', cat: id, col: ci + 1, val: num(b)});
+        else if (a != null && b == null) out.push({kind: 'missing', cat: id, col: ci + 1, val: num(a)});
+        else if (num(a) != null && num(b) != null && a !== b) out.push({kind: 'diff', cat: id, col: ci + 1, a, b, delta: b - a});
+      });
+      if (base.waiver !== c.waiver) out.push({kind: c.waiver ? 'only' : 'missing', cat: 'waiver', col: ci + 1});
+      if (base.annual != null && c.annual != null && base.annual !== c.annual && base.freq !== 'single' && c.freq !== 'single') out.push({kind: 'premium', col: ci + 1, a: base.annual, b: c.annual, delta: c.annual - base.annual});
+      const ea = base.end && base.end.age, eb = c.end && c.end.age;
+      if (ea && eb && ea !== eb) out.push({kind: 'term', col: ci + 1, a: ea, b: eb});
+    });
+    const rank = {only: 0, missing: 1, diff: 2, premium: 3, term: 4};
+    return out.sort((x, y) => rank[x.kind] - rank[y.kind]);
+  }
+  /* the client's total cover today, and with each proposal (optionally replacing the chosen existing policies) */
+  function coverWith(c, proposals, replaceIds) {
+    const existing = (c.policies || []).filter(p => !isProposal(p));
+    const today = summarise(Object.assign({}, c, {policies: existing}));
+    const keep = existing.filter(p => !(replaceIds || []).includes(p.id));
+    return {today, withEach: proposals.map(pr => ({p: pr, s: summarise(Object.assign({}, c, {policies: keep.concat([Object.assign({}, pr, {role: '', status: 'inforce'})])}))}))};
+  }
+
   /* ---------- formatting ---------- */
   function rm(v, opts) {
     opts = opts || {};
@@ -342,6 +398,6 @@
   function learnKey(name) { return norm(name); }
 
   const API = {CATS, CAT_IDS, catOf, INSURERS, matchInsurer, insurerColor, classify, parseAmount, parseFreq, FREQ, annualPremium,
-    maskPolicyNo, aiPrompt, fromAI, mergePolicies, blankPolicy, blankBenefit, pendingChecks, summarise, policyRow, rm, norm, learnKey, uid};
+    maskPolicyNo, aiPrompt, fromAI, mergePolicies, blankPolicy, blankBenefit, pendingChecks, summarise, policyRow, rm, isProposal, coverEnd, compareCol, keyDiffs, coverWith, CMP_CATS, norm, learnKey, uid};
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.PS = API;
 })(this);

@@ -36,7 +36,13 @@
         {id: PS.uid(), source: 'manual', insurer: 'Hong Leong Assurance', productName: 'Endowment plan (sample)', policyNo: '••••2046',
           lifeAssured: 'Tan Mei Ling', planType: 'traditional', status: 'lapsed', startDate: '2010-01-10', premium: 100, premiumFreq: 'monthly',
           cashValue: null, cashValueDate: '', bonus: null, checks: {},
-          benefits: [B('death', 'Death benefit', 50000)]}
+          benefits: [B('death', 'Death benefit', 50000)]},
+        {id: PS.uid(), source: 'manual', role: 'proposal', insurer: 'Great Eastern Life', productName: 'Protection plan with medical rider (sample proposal)', policyNo: '',
+          lifeAssured: 'Tan Mei Ling', planType: 'traditional', status: 'inforce', startDate: '', premium: 420, premiumFreq: 'monthly', coverTo: 100, payYears: 25,
+          cashValue: null, cashValueDate: '', bonus: null, checks: {},
+          benefits: [B('death', 'Death benefit', 500000, {untilAge: 100}), B('tpd', 'TPD benefit', 500000, {untilAge: 70}),
+            B('ci', 'Critical illness rider', 300000, {untilAge: 100, rider: true}), B('eci', 'Early critical illness rider', 100000, {untilAge: 100, rider: true}),
+            B('medical', 'Medical rider', null, {annual: 2000000, lifetimeUnlimited: true, roomBoard: 300, deductible: 0, untilAge: 100, rider: true}), Object.assign(B('waiver', 'Payor waiver rider', null), {rider: true})]}
       ]
     };
   }

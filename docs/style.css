@@ -278,3 +278,14 @@ a.btn.nx{text-decoration:none}
 .psbox .ps-sub{margin:8px 0 10px;opacity:.85}
 .psbox .ps-more{margin-top:8px}
 .psbox #resendPS:not(:empty){margin-top:8px}
+.pill.prop{background:#F7EBCF;color:#8A6416}
+.psbox .cmpbar{margin-top:8px;display:flex;flex-direction:column;gap:8px}
+.psbox .cmp-go{background:#fff;color:var(--ink,#14213D);font-weight:700}
+.cmp-pick{display:flex;flex-direction:column;gap:8px}
+.cmp-it{display:flex;align-items:center;gap:10px;text-align:left;width:100%;padding:10px 12px;border:1.5px solid var(--line,#E4E1D8);border-radius:12px;background:#fff;font:inherit;color:inherit;cursor:pointer}
+.cmp-it.on{border-color:var(--gold,#C9A24A);background:#FFFBF1}
+.cmp-it i{width:4px;align-self:stretch;border-radius:2px;flex:none}
+.cmp-it .t{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+.cmp-it .t small{color:var(--muted);font-size:12.5px}
+.cmp-n{width:26px;height:26px;border-radius:50%;border:1.5px solid var(--line,#E4E1D8);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex:none}
+.cmp-it.on .cmp-n{background:var(--ink,#14213D);border-color:var(--ink,#14213D);color:#fff}

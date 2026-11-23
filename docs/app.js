@@ -87,6 +87,7 @@
     if (h[0] === 'case' && getCase(h[1])) {
       if (h[2] === 'policy') return editPolicy(getCase(h[1]), h[3]);
       if (h[2] === 'summary') return summary(getCase(h[1]));
+      if (h[2] === 'compare') return compareScreen(getCase(h[1]));
       return caseScreen(getCase(h[1]));
     }
     home();
@@ -163,17 +164,20 @@
   /* ---------- one client ---------- */
   function caseScreen(c) {
     const s = PS.summarise(c), checks = PS.pendingChecks(c), kind = FU.kindOf(c);
+    const exist = c.policies.filter(p => !PS.isProposal(p)), props = c.policies.filter(PS.isProposal);
     app.innerHTML = bar(c.client.name || 'Client', '#/', `<button class="ib" id="del" aria-label="Delete client">${ICONS.trash}</button>`) + `
       <div class="wrap">
         <div class="kindbar ${kind}"><span>${kind === 'client' ? '⭐ Existing client' : '🌱 Prospect'}</span><button type="button" class="btn sm" id="kindSw">${kind === 'client' ? 'Move to Prospects' : 'Move to Existing Clients'}</button></div>
         ${afterCloseCard(c)}
         <div class="card hero psbox"><h2>📄 Policy summary</h2>
-          ${c.policies.length ? `<div class="stat"><div><span>Death</span><b>${PS.rm(s.cats.death.total, {short: true})}</b></div><div><span>CI</span><b>${PS.rm(s.cats.ci.total, {short: true})}</b></div><div><span>Medical/yr</span><b>${s.medical.annual != null ? PS.rm(s.medical.annual, {short: true}) : '—'}</b></div></div>
-            <p class="ps-sub">${c.policies.length} polic${c.policies.length === 1 ? 'y' : 'ies'}${checks.length ? ` · <b>${checks.length} to check</b>` : ' · all checked'}</p>
+          ${exist.length ? `<div class="stat"><div><span>Death</span><b>${PS.rm(s.cats.death.total, {short: true})}</b></div><div><span>CI</span><b>${PS.rm(s.cats.ci.total, {short: true})}</b></div><div><span>Medical/yr</span><b>${s.medical.annual != null ? PS.rm(s.medical.annual, {short: true}) : '—'}</b></div></div>
+            <p class="ps-sub">${exist.length} polic${exist.length === 1 ? 'y' : 'ies'}${checks.length ? ` · <b>${checks.length} to check</b>` : ' · all checked'}</p>
             <a class="btn primary block" href="#/case/${c.id}/summary">See summary &amp; create PDF</a>
             <button type="button" class="btn block ps-more" id="psAdd">+ Add more policies</button>`
           : `<p>Snap or upload ${esc(c.client.name || 'their')}'s policies from any insurer: policy pages, e-Connect / portal screenshots or PDFs. On Field reads them and adds up the cover on one page.</p>
             <button type="button" class="btn primary block" id="psAdd">📷 Start policy summary</button>`}
+          <div class="cmpbar">${c.policies.length >= 2 ? `<a class="btn block cmp-go" href="#/case/${c.id}/compare">⚖️ Compare policies &amp; proposals</a>` : ''}
+            <button type="button" class="btn block ps-more" id="propAdd">+ Add a proposal to compare</button></div>
           <div id="resendPS"></div>
         </div>
         ${kind === 'client' ? '' : farmCard(c)}
@@ -190,13 +194,13 @@
         <input type="file" id="file" accept="image/*" multiple hidden>
         <input type="file" id="pdfIn" accept="application/pdf,.pdf" multiple hidden>
         ${checks.length ? `<div class="checks"><b>${checks.length} item${checks.length > 1 ? 's' : ''} to confirm</b> before the summary is complete. Tap a policy marked <span class="pill warn">check</span>.</div>` : ''}
-        <h2 class="muted" style="margin:6px 2px 8px;font-weight:600">POLICIES (${c.policies.length})</h2>
-        ${c.policies.length ? c.policies.map(p => {
-          const n = PS.pendingChecks({policies: [p]}).length, r = PS.policyRow(p), out = p.status !== 'inforce' && p.status !== 'unknown';
+        <h2 class="muted" style="margin:6px 2px 8px;font-weight:600">POLICIES (${exist.length})</h2>
+        ${[[exist, 0], [props, 1]].map(([list, isP]) => (isP && !list.length ? '' : (isP ? '<h2 class="muted" style="margin:14px 2px 8px;font-weight:600">PROPOSALS (' + list.length + ') <small style="font-weight:400;letter-spacing:0;text-transform:none">· compared only, not in the summary</small></h2>' : '')) + (list.length ? list.map(p => {
+          const n = PS.pendingChecks({policies: [p]}, true).length, r = PS.policyRow(p), out = p.status !== 'inforce' && p.status !== 'unknown';
           const tags = PS.CATS.filter(k => r[k.id].has).map(k => k.short).join(' · ');
-          return `<a class="item" href="#/case/${c.id}/policy/${p.id}"><span class="stripe" style="background:${PS.insurerColor(p.insurer)}"></span><div class="t"><b>${esc(p.insurer || 'Insurer?')}</b><span>${esc(p.productName || 'Plan')}${p.policyNo ? ' · ' + esc(p.policyNo) : ''}</span><span>${esc(tags || 'No benefits yet')}</span></div>
+          return `<a class="item" href="#/case/${c.id}/policy/${p.id}"><span class="stripe" style="background:${PS.insurerColor(p.insurer)}"></span><div class="t"><b>${esc(p.insurer || 'Insurer?')}${PS.isProposal(p) ? ' <span class="pill prop">Proposal</span>' : ''}</b><span>${esc(p.productName || 'Plan')}${p.policyNo ? ' · ' + esc(p.policyNo) : ''}</span><span>${esc(tags || 'No benefits yet')}</span></div>
             <div class="amt">${n ? `<span class="pill warn">${n} check</span>` : out ? `<span class="pill grey">${esc(p.status)}</span>` : '<span class="pill ok">OK</span>'}<small>${p.source === 'photo' ? 'from photo' : 'keyed in'}</small></div></a>`;
-        }).join('') : '<div class="empty">No policies yet. Tap <b>Add policy pages</b>, add every policy the client has from any insurer, then read them all at once.</div>'}
+        }).join('') : isP ? '' : '<div class="empty">No policies yet. Tap <b>Add policy pages</b>, add every policy the client has from any insurer, then read them all at once.</div>')).join('')}
         ${kind === 'client' ? farmCard(c) : '</details>'}
         <div class="card" style="margin-top:12px"><h2>Client</h2>
           <div class="f"><label for="cName">Name on PDF</label><input id="cName" value="${esc(c.client.name)}"></div>
@@ -205,15 +209,16 @@
           <p class="muted">With income, the summary compares cover with a guideline of ${c.guide.death}× income for death/TPD and ${c.guide.ci}× for CI. Change the multiples in Settings.</p>
         </div>
       </div>
-      ${c.policies.length ? `<div class="dock"><a class="btn navy" href="#/case/${c.id}/summary">See policy summary &amp; PDF</a></div>` : ''}`;
+      ${exist.length ? `<div class="dock"><a class="btn navy" href="#/case/${c.id}/summary">See policy summary &amp; PDF</a></div>` : ''}`;
     $('#key').onclick = () => { location.hash = '#/case/' + c.id + '/policy/new'; };
     wireFarm(c);
     wireResend(c);
     $('#kindSw').onclick = () => setKind(c, kind === 'client' ? 'prospect' : 'client');
     wireAfterClose(c);
-    $('#addP').onclick = () => { if (!tray || tray.caseId !== c.id) { clearTray(); tray = {caseId: c.id, items: [], notes: []}; } showTray(c); };
+    $('#addP').onclick = () => openTray(c, 'existing');
+    $('#propAdd').onclick = () => { const w = $('.polwrap'); if (w) w.open = true; openTray(c, 'proposal'); };
     $('#psAdd').onclick = () => { const w = $('.polwrap'); if (w) w.open = true; $('#addP').click(); };
-    if (openTrayFor === c.id) { openTrayFor = null; setTimeout(() => $('#psAdd') && $('#psAdd').click(), 0); }
+    if (openTrayFor === c.id) { const role = openTrayRole || 'existing'; openTrayFor = null; openTrayRole = null; setTimeout(() => { const w = $('.polwrap'); if (w) w.open = true; openTray(c, role); }, 0); }
     $('#snap').onclick = () => $('#camIn').click();
     $('#pics').onclick = () => $('#file').click();
     $('#pdfB').onclick = () => $('#pdfIn').click();
@@ -347,10 +352,12 @@
   }
   function clearTray() { if (tray) tray.items.forEach(it => it.url && URL.revokeObjectURL(it.url)); tray = null; photoN = 0; }
 
+  function openTray(c, role) { if (!tray || tray.caseId !== c.id) { clearTray(); tray = {caseId: c.id, items: [], notes: []}; } if (role) tray.role = role; showTray(c); }
   function showTray(c) {
-    const items = tray.items, n = items.filter(it => it.on).length;
+    const items = tray.items, n = items.filter(it => it.on).length, prop = tray.role === 'proposal';
     const el = sheet(`<div class="sheet-top"><h3>${n ? `Read ${n} page${n === 1 ? '' : 's'}?` : 'Add policy pages'}</h3><button type="button" class="xbtn" id="trayX" aria-label="Close">✕</button></div>
-      <p style="margin-bottom:8px">Add every policy for ${esc(c.client.name || 'this client')}, from any insurer: photos, screenshots of insurer apps, and PDFs. Tap a page to leave it out. The AI sorts them into separate policies.</p>
+      <div class="seg" id="tRole" style="margin-bottom:8px"><button type="button" data-r="existing" aria-pressed="${!prop}">Existing policies</button><button type="button" data-r="proposal" aria-pressed="${prop}">New proposal</button></div>
+      <p style="margin-bottom:8px">${prop ? `Add the benefit illustration or proposal pages for ${esc(c.client.name || 'this client')} (any insurer, PDF or photos). It is saved as a <b>proposal</b>: used in comparisons, never counted in their policy summary.` : `Add every policy for ${esc(c.client.name || 'this client')}, from any insurer: photos, screenshots of insurer apps, and PDFs. Tap a page to leave it out. The AI sorts them into separate policies.`}</p>
       ${items.length ? `<div class="pick grid">${items.map((it, i) => `<button type="button" class="th" data-i="${i}" aria-pressed="${it.on}"><img src="${it.url}" alt=""><span>${esc(it.label)}</span></button>`).join('')}</div>` : ''}
       <div class="addrow">
         <button class="btn sm" id="tCam">${ICONS.cam.replace('<svg ', '<svg width="18" height="18" ')}Take photo</button>
@@ -363,6 +370,7 @@
       <div class="row" style="margin-top:10px"><button class="btn" id="tCancel">Cancel</button><button class="btn primary" id="tGo" ${!n || n > MAX_PICK ? 'disabled' : ''}>Read with AI</button></div>`);
     $('#sheet').dataset.lock = '1';   // a stray tap outside must not throw the pages away
     $$('.th', el).forEach(b => b.onclick = () => { const it = items[+b.dataset.i]; it.on = !it.on; showTray(c); });
+    $$('#tRole button', el).forEach(b => b.onclick = () => { tray.role = b.dataset.r; showTray(c); });
     $('#tCam', el).onclick = () => $('#camIn').click();
     $('#tPic', el).onclick = () => $('#file').click();
     $('#tPdf', el).onclick = () => $('#pdfIn').click();
@@ -412,8 +420,9 @@
     if (stop && stop.code === 'unauthorized') { if (await signIn()) toast('Signed in. Tap Read with AI again.'); return showTray(c); }
 
     const merged = PS.mergePolicies(found);
+    if (tray.role === 'proposal') merged.forEach(p => { p.role = 'proposal'; p.status = 'inforce'; delete p.checks.status; p.cashValue = null; p.bonus = null; delete p.checks.cashValue; delete p.checks.bonus; });
     merged.forEach(p => {
-      const dup = c.policies.find(q => q.insurer && q.insurer === p.insurer && q.policyNo && q.policyNo === p.policyNo);
+      const dup = c.policies.find(q => q.insurer && q.insurer === p.insurer && q.policyNo && q.policyNo === p.policyNo && PS.isProposal(q) === PS.isProposal(p));
       if (dup) p.checks.duplicate = 'Looks like a policy already added (' + dup.policyNo + '). Delete one if it is the same.';
     });
     if (merged.length) { c.policies.push(...merged); c.updated = new Date().toISOString(); saveCases(); route(); }   // list behind the result box shows them
@@ -424,9 +433,9 @@
     tray.items = failed.map(it => Object.assign(it, {on: true}));
     tray.notes = [];
     const insurers = [...new Set(merged.map(p => p.insurer || 'Insurer not recognised'))];
-    const checks = PS.pendingChecks({policies: merged}).length;
+    const checks = PS.pendingChecks({policies: merged}, true).length;
     const why = stop ? (AI_ERR[stop.code] || stop.code) : failed.length ? AI_ERR[failed[0].why] || 'Some pages could not be read.' : '';
-    const el = sheet(`<h3>${merged.length ? `Found ${merged.length} polic${merged.length > 1 ? 'ies' : 'y'}` : 'No policy details found'}</h3>
+    const el = sheet(`<h3>${merged.length ? `Found ${merged.length} ${tray.role === 'proposal' ? 'proposal' + (merged.length > 1 ? 's' : '') : 'polic' + (merged.length > 1 ? 'ies' : 'y')}` : 'No policy details found'}</h3>
       ${merged.length ? `<p>From ${insurers.length} insurer${insurers.length > 1 ? 's' : ''}: ${esc(insurers.join(', '))}.${checks ? ` <b>${checks} item${checks > 1 ? 's' : ''} to check</b>, marked orange.` : ''}</p>
         <ul class="found">${merged.map(p => `<li><i style="background:${PS.insurerColor(p.insurer)}"></i><b>${esc(p.insurer || '?')}</b> ${esc(p.productName || '')}${p.policyNo ? ' · ' + esc(p.policyNo) : ''}${p.parts > 1 ? ` <span class="muted">(joined from ${p.parts} parts)</span>` : ''}</li>`).join('')}</ul>`
       : '<p>The pages didn\'t show a policy the app could read. Try clearer photos or different PDF pages, or key it in.</p>'}
@@ -456,6 +465,8 @@
         ${p.source === 'photo' && Object.keys(p.checks).length + p.benefits.filter(b => b.check).length ? '<div class="checks"><b>Read from photo.</b> Orange items were unclear. Fix them or tap <b>Looks right</b>. Nothing is counted as zero when it is missing.</div>' : ''}
         ${note('duplicate')}${note('benefits')}
         <div class="card"><h2>Policy</h2>
+          <div class="seg" id="pRole" style="margin-bottom:10px"><button type="button" data-r="" aria-pressed="${!PS.isProposal(p)}">Existing policy</button><button type="button" data-r="proposal" aria-pressed="${PS.isProposal(p)}">Proposal (not bought yet)</button></div>
+          ${PS.isProposal(p) ? '<p class="muted" style="margin:-4px 0 10px">Proposals are used in comparisons only. They never count in the client\'s policy summary.</p>' : ''}
           ${note('insurer')}
           <div class="f"><label for="pIns">Insurer${p.insurerRaw && p.insurerRaw !== p.insurer ? ` <span class="muted">(photo said "${esc(p.insurerRaw)}")</span>` : ''}</label><select id="pIns" class="${flag('insurer')}"><option value="">Choose…</option>${insurerOpts}</select></div>
           ${note('productName')}
@@ -474,6 +485,11 @@
           <div class="grid2">
             <div class="f"><label for="pPrem">Premium (RM)</label><input id="pPrem" inputmode="decimal" class="${flag('premium')}" value="${money(p.premium)}"></div>
             <div class="f"><label for="pFreq">Paid</label><select id="pFreq" class="${flag('premium')}"><option value="">?</option>${['monthly', 'quarterly', 'half-yearly', 'yearly', 'single'].map(v => `<option ${p.premiumFreq === v ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+          </div>
+          <div class="grid3">
+            <div class="f"><label for="pTo">Cover to age</label><input id="pTo" inputmode="numeric" value="${money(p.coverTo)}" placeholder="e.g. 100"></div>
+            <div class="f"><label for="pYrs">or term (years)</label><input id="pYrs" inputmode="numeric" value="${money(p.coverYears)}"></div>
+            <div class="f"><label for="pPay">Pay for (years)</label><input id="pPay" inputmode="numeric" value="${money(p.payYears)}"></div>
           </div>
           ${note('cashValue')}${note('bonus')}
           <div class="grid3">
@@ -499,6 +515,7 @@
         <div class="f"><label>Benefit name</label><input data-k="name" value="${esc(b.name)}" placeholder="As printed, e.g. Critical Illness Rider"></div>
         <div class="grid2"><div class="f"><label>Category</label><select data-k="cat">${PS.CATS.map(k => `<option value="${k.id}" ${b.cat === k.id ? 'selected' : ''}>${esc(k.label)}</option>`).join('')}</select></div>
         <div class="f"><label>Covered to age</label><input data-k="untilAge" inputmode="numeric" value="${money(b.untilAge)}"></div></div>
+        <label class="chk" style="margin-bottom:8px"><input type="checkbox" data-k="rider" ${b.rider ? 'checked' : ''}> Rider / add-on (not the basic plan)</label>
         ${med ? `<div class="grid2"><div class="f"><label>Annual limit (RM)</label><input data-k="annual" inputmode="decimal" value="${money(b.annual)}"></div>
           <div class="f"><label>Lifetime limit (RM)</label><input data-k="lifetime" inputmode="decimal" value="${money(b.lifetime)}" ${b.lifetimeUnlimited ? 'disabled' : ''}></div></div>
           <label class="chk"><input type="checkbox" data-k="lifetimeUnlimited" ${b.lifetimeUnlimited ? 'checked' : ''}> No lifetime limit</label>
@@ -521,6 +538,10 @@
       bind('#pCV', v => { p.cashValue = PS.parseAmount(v).value; delete p.checks.cashValue; });
       bind('#pCVD', v => { p.cashValueDate = v; });
       bind('#pBon', v => { p.bonus = PS.parseAmount(v).value; delete p.checks.bonus; });
+      bind('#pTo', v => { p.coverTo = PS.parseAmount(v).value; });
+      bind('#pYrs', v => { p.coverYears = PS.parseAmount(v).value; });
+      bind('#pPay', v => { p.payYears = PS.parseAmount(v).value; });
+      $$('#pRole button').forEach(b => b.onclick = () => { p.role = b.dataset.r; if (p.role) { p.status = 'inforce'; delete p.checks.status; } dirty = true; keep(draw); });
       $$('#pPrem,#pCV,#pBon').forEach(inp => inp.addEventListener('change', () => {
         const v = PS.parseAmount(inp.value);
         if (v.value != null) { inp.value = money(v.value); inp.classList.remove('flag'); }
@@ -536,6 +557,7 @@
           const k = inp.dataset.k; dirty = true;
           if (k === 'name') b.name = inp.value.trim();
           else if (k === 'cat') { b.cat = inp.value; b.catSet = true; return keep(draw); }
+          else if (k === 'rider') b.rider = inp.checked;
           else if (k === 'lifetimeUnlimited') { b.lifetimeUnlimited = inp.checked; if (inp.checked) b.lifetime = null; return keep(draw); }
           else { const v = PS.parseAmount(inp.value); b[k] = v.value; if (k === 'lifetime' && v.unlimited) { b.lifetimeUnlimited = true; return keep(draw); }
             if (v.value != null) { inp.value = money(v.value); inp.classList.remove('flag'); }
@@ -555,7 +577,7 @@
         if (!p.benefits.length) p.checks.benefits = 'No benefits yet: add at least one'; else delete p.checks.benefits;
         if (isNew) c.policies.push(p); else c.policies[c.policies.indexOf(orig)] = p;
         c.updated = new Date().toISOString(); saveCases(); dirty = false;
-        const next = c.policies.find(q => q !== p && PS.pendingChecks({policies: [q]}).length);
+        const next = c.policies.find(q => q !== p && PS.pendingChecks({policies: [q]}, true).length);
         if (next) { toast('Saved. Next one to check.'); location.hash = '#/case/' + c.id + '/policy/' + next.id; }
         else { toast('Saved'); location.hash = '#/case/' + c.id; }
       };
@@ -601,7 +623,44 @@
     };
   }
 
-  async function makePDF(c, pages) {
+  /* ---------- ⚖️ compare policies and proposals (same template as the summary) ---------- */
+  function compareScreen(c) {
+    const all = c.policies.slice().sort((a, b) => (PS.isProposal(a) ? 1 : 0) - (PS.isProposal(b) ? 1 : 0));
+    const live = p => PS.isProposal(p) || p.status === 'inforce' || p.status === 'unknown';
+    let sel = (c.cmp && c.cmp.ids || []).filter(id => all.some(p => p.id === id));
+    if (sel.length < 2) { const ex = all.filter(p => !PS.isProposal(p) && live(p)), pr = all.filter(PS.isProposal); sel = (pr.length ? ex.slice(0, 1).concat(pr) : ex).slice(0, 4).map(p => p.id); if (sel.length < 2) sel = all.slice(0, 2).map(p => p.id); }
+    const replace = !!(c.cmp && c.cmp.replace);
+    const chosen = sel.map(id => all.find(p => p.id === id));
+    const mixed = chosen.some(PS.isProposal) && chosen.some(p => !PS.isProposal(p));
+    const checks = PS.pendingChecks({policies: chosen}, true);
+    const pages = sel.length >= 2 ? Report.buildCompare(c, sel, agent(), PS, {replace: mixed && replace}) : [];
+    const fit = Math.min(1, (Math.min(innerWidth, 560) - 28) / 794);
+    app.innerHTML = bar('Compare · ' + (c.client.name || ''), '#/case/' + c.id) + `<div class="wrap">
+      <div class="card"><h2>Choose 2 to 4 to compare</h2>
+        <p class="muted" style="margin-bottom:8px">The first one ticked is the starting point; the others are compared with it. Untick and tick again to change the order.</p>
+        <div class="cmp-pick">${all.map(p => { const i = sel.indexOf(p.id); return `<button type="button" class="cmp-it ${i >= 0 ? 'on' : ''}" data-id="${p.id}"><span class="cmp-n">${i >= 0 ? String.fromCharCode(65 + i) : ''}</span><i style="background:${PS.insurerColor(p.insurer)}"></i><span class="t"><b>${esc(p.insurer || 'Insurer?')} ${PS.isProposal(p) ? '<span class="pill prop">Proposal</span>' : live(p) ? '' : `<span class="pill grey">${esc(p.status)}</span>`}</b><small>${esc(p.productName || 'Plan')}${PS.annualPremium(p) != null ? ' · ' + PS.rm(PS.annualPremium(p)) + '/yr' : ''}</small></span></button>`; }).join('')}</div>
+        <button type="button" class="btn block" id="cmpProp" style="margin-top:10px">+ Add a proposal</button>
+        ${mixed ? `<label class="chk" style="margin-top:10px"><input type="checkbox" id="cmpRep" ${replace ? 'checked' : ''}> The proposal <b>replaces</b> the existing polic${chosen.filter(p => !PS.isProposal(p)).length > 1 ? 'ies' : 'y'} ticked (page 2 totals leave ${chosen.filter(p => !PS.isProposal(p)).length > 1 ? 'them' : 'it'} out)</label>` : ''}
+      </div>
+      ${checks.length ? `<div class="checks"><b>${checks.length} item${checks.length > 1 ? 's' : ''} not confirmed</b> in the plans chosen. Missing amounts show as "Not stated". <a href="#/case/${c.id}/policy/${checks[0].policyId}">Check now</a></div>` : ''}
+      ${mixed ? '<div class="checks">Existing policy vs proposal: the PDF adds a short note on what the client may lose by replacing a policy. Follow the replacement disclosure process before any switch.</div>' : ''}
+      ${pages.length ? `<div class="pages">${pages.map((h, i) => `<div class="pagebox" style="width:${Math.round(794 * fit)}px;height:${Math.round(1123 * fit)}px">${h.replace('class="rp-page"', `class="rp-page" style="transform:scale(${fit})"`)}</div>`).join('')}</div>` : '<div class="empty">Tick at least 2.</div>'}
+    </div>
+    ${pages.length ? `<div class="dock"><button class="btn primary" id="cmpMk">Create comparison PDF</button></div>` : ''}`;
+    const store = (ids, rep) => { c.cmp = {ids, replace: rep}; c.updated = new Date().toISOString(); saveCases(); keepScroll(() => compareScreen(c)); };
+    $$('.cmp-it').forEach(b => b.onclick = () => { const id = b.dataset.id, i = sel.indexOf(id); if (i >= 0) sel.splice(i, 1); else if (sel.length >= 4) return toast('Up to 4 at a time. Untick one first.'); else sel.push(id); store(sel, replace); });
+    const rp = $('#cmpRep'); if (rp) rp.onchange = () => store(sel, rp.checked);
+    $('#cmpProp').onclick = () => { openTrayFor = c.id; openTrayRole = 'proposal'; location.hash = '#/case/' + c.id; };
+    const mk = $('#cmpMk'); if (mk) mk.onclick = async () => {
+      if (checks.length && !(await confirmBox('Create with unconfirmed items?', checks.length + ' item' + (checks.length > 1 ? 's are' : ' is') + ' not confirmed. Missing amounts show as <b>Not stated</b>.', 'Create anyway'))) return;
+      makePDF(c, pages, {kind: 'compare', fname: `Policy Comparison - ${(c.client.name || 'Client').replace(/[^\w .-]+/g, '')} - ${new Date().toISOString().slice(0, 10)}.pdf`,
+        wa: 'Hi ' + (c.client.name || '') + ', here is the side-by-side comparison of the plans we discussed.'});
+    };
+  }
+  function keepScroll(fn) { const y = scrollY; fn(); scrollTo(0, y); }
+
+  async function makePDF(c, pages, o) {
+    o = o || {};
     const box = sheet('<h3>Creating PDF…</h3><div class="spin"></div><p id="pg" style="text-align:center">Page 1</p>');
     $('#sheet').dataset.lock = '1';
     const stage = document.createElement('div');
@@ -612,9 +671,9 @@
     try { blob = await Report.toPDF(stage, (i, n) => { $('#pg', box).textContent = `Page ${i} of ${n}`; }); }
     catch (e) { stage.remove(); closeSheet(); toast('Could not create the PDF. Try again.'); console.error(e); return; }
     stage.remove();
-    const fname = `Policy Summary - ${(c.client.name || 'Client').replace(/[^\w .-]+/g, '')} - ${new Date().toISOString().slice(0, 10)}.pdf`;
-    await startSend({kind: 'summary', blob, fileName: fname, caseId: c.id, name: c.client.name || 'client',
-      wa: 'Hi ' + (c.client.name || '') + ', here is the summary of your insurance policies we went through.'});
+    const fname = o.fname || `Policy Summary - ${(c.client.name || 'Client').replace(/[^\w .-]+/g, '')} - ${new Date().toISOString().slice(0, 10)}.pdf`;
+    await startSend({kind: o.kind || 'summary', blob, fileName: fname, caseId: c.id, name: c.client.name || 'client',
+      wa: o.wa || 'Hi ' + (c.client.name || '') + ', here is the summary of your insurance policies we went through.'});
   }
 
   /* ======================= send a PDF (+ WhatsApp message) without ever redoing it =======================
@@ -721,12 +780,13 @@
         const li = $(`.timeline li[data-mid="${r.meetingId}"]`); if (!li || $('.tl-resend', li)) return;
         const b = document.createElement('button'); b.type = 'button'; b.className = 'btn sm tl-resend'; b.textContent = r.sent ? '📤 Send PDF again' : '📤 Send PDF (not sent yet)';
         b.onclick = () => resendPdf(r.key); li.insertBefore(b, $('.tl-del', li));
-      } else if (r.kind === 'summary' && !seen.summary) {
-        seen.summary = 1;
+      } else if ((r.kind === 'summary' || r.kind === 'compare') && !seen[r.kind]) {
+        seen[r.kind] = 1;
         const host = $('#resendPS'); if (!host) return;
         const d = new Date(r.created), p = n => String(n).padStart(2, '0');
-        host.innerHTML = `<button type="button" class="btn block">📤 Send last summary PDF again (${p(d.getDate())}/${p(d.getMonth() + 1)})</button>`;
-        $('button', host).onclick = () => resendPdf(r.key);
+        const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn block'; btn.style.marginTop = '6px';
+        btn.textContent = `📤 Send last ${r.kind === 'compare' ? 'comparison' : 'summary'} PDF again (${p(d.getDate())}/${p(d.getMonth() + 1)})`;
+        btn.onclick = () => resendPdf(r.key); host.appendChild(btn);
       }
     });
   }
@@ -1522,7 +1582,7 @@
     return `<nav class="tabbar">${items.map(([k, href, ic, label, badge]) => `<a href="${href}" class="${k === active ? 'on' : ''}"><span>${ic}${badge}</span>${label}</a>`).join('')}</nav>`;
   }
   /* ---------- 📄 Summary tab: every policy summary in one place ---------- */
-  let openTrayFor = null;   // open the "Add policy pages" tray when this client's page shows
+  let openTrayFor = null, openTrayRole = null;   // open the "Add policy pages" tray when this client's page shows
   function psStart() {
     const people = cases.filter(x => !x.sample).sort((a, b) => (b.updated || '').localeCompare(a.updated || ''));
     let k = 'client';

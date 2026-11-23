@@ -97,6 +97,22 @@ AI is shared by the whole team through the team server: about 300 AI reads a day
 
 **Where to find it:** the **📄 Summary** tab at the bottom, the **📄 Policy summary** card on Home, or the **📄 Policy summary** box at the top of any client or prospect page (totals, See summary & create PDF, + Add more policies).
 
+### ⚖️ Compare policies & proposals
+
+1. On the client's page, tap **+ Add a proposal to compare**. The tray is set to **New proposal**: snap or upload the benefit illustration / proposal PDF (any insurer), or key it in and pick **Proposal (not bought yet)** at the top of the form. Proposals are listed separately and **never count in the policy summary**.
+2. Tap **⚖️ Compare policies & proposals**. Tick 2 to 4 plans; the first one ticked (A) is the starting point and the others are compared with it.
+3. If an existing policy is compared with a proposal, tick **The proposal replaces the existing policy** when it is a switch; page 2 then leaves the replaced policy out of the totals.
+4. **Create comparison PDF**, then send it like the summary.
+
+The PDF (same REDEFINE template):
+- **Page 1, side by side:** death, TPD, CI, early CI, accident, medical (annual, lifetime, room & board), hospital income, premium waiver, premium and premium per year, paying term, cover until, cash value and bonus, riders. The highest amount in each cover row is shaded, each column shows its difference from A, and cover a plan does not have shows **Not included**.
+- **Main differences at a glance:** neutral sentences (e.g. "Critical illness: RM300k in Proposal B vs RM100k in Existing A (+RM200k)"). It never says which plan is better. With 3 or 4 plans this box moves to page 2.
+- **Page 2, your total cover:** today vs with each proposal (added, or replacing), with premium per year and the income guideline when income is known.
+- **Plan details** for each plan compared.
+- When an existing policy is compared with a proposal, every page carries a short note on what the client may lose by replacing a policy. Follow the replacement disclosure process before any switch.
+
+The AI now also reads **cover to age / term**, **premium paying term** and which benefits are **riders**. Older policies can have these added in the form.
+
 ## What you need
 
 | Item | Format | Status |
@@ -146,7 +162,7 @@ Clients are locked with your passphrase before they leave the device. The server
 ## For maintenance
 
 - `docs/` is the app. `logic.js` handles recognition and calculations, `report.js` builds the PDF pages, `app.js` runs the screens, and `config.js` holds the server address.
-- `node test.js` runs 144 checks covering recognition, messy numbers, the never-guess rules, the summary maths, the 三访 report, activity stages and the Calendar link.
+- `node test.js` runs 156 checks covering recognition, messy numbers, the never-guess rules, the summary maths, the 三访 report, activity stages, the Calendar link and the comparison.
 - `node serve.js` previews the app at http://localhost:5193.
 - `samples/` holds the sample PDF made by the app.
 - `node test-sync-server.js` runs the real team server code in memory on port 5194 to test sync (open localhost:5194 and 127.0.0.1:5194 as two devices; team code `test-team-code`).

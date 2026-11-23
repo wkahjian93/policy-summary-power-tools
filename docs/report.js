@@ -130,10 +130,139 @@
   }
 
   function build(c, agent, PS, opts) {
+    c = Object.assign({}, c, {policies: (c.policies || []).filter(p => !PS.isProposal(p))});   // proposals are compared, never summarised
     const s = PS.summarise(c);
     const tmpDetail = detailPages(c, agent, PS, 3, 0).length;
     const pages = 2 + tmpDetail;
     return [page1(c, s, agent, PS, pages, opts), matrix(c, s, agent, PS, pages)].concat(detailPages(c, agent, PS, 3, pages));
+  }
+
+  /* ---------- Policy / proposal comparison (same template as the summary) ---------- */
+  const CL = {
+    en: {title: 'Policy Comparison', prep: 'Prepared for', comparing: n => 'Comparing ' + n + ' plans side by side',
+      existing: 'Existing', proposal: 'Proposal', protection: 'Protection', medical: 'Medical', cost: 'Premium & term', value: 'Savings value',
+      rows: {death: 'Death', tpd: 'Total & Permanent Disability', ci: 'Critical illness', eci: 'Early critical illness', accident: 'Accident (extra)', hospital: 'Hospital income / day',
+        medical: 'Medical card · annual limit', medLife: 'Medical · lifetime limit', room: 'Room & board / day', deduct: 'Deductible', waiver: 'Premium waiver',
+        premium: 'Premium', annual: 'Premium per year', pay: 'Premium paying term', end: 'Cover until', cash: 'Cash value today', bonus: 'Bonus accumulated', riders: 'Riders & add-ons'},
+      notIncl: 'Not included', notStated: 'Not stated', included: 'Included', unlimited: 'No limit', age: a => 'Age ' + a, years: y => y + ' years', perYear: '/ year',
+      freq: {monthly: '/ month', quarterly: '/ quarter', 'half-yearly': '/ half-year', yearly: '/ year', single: 'single'},
+      vs: 'vs first column', diffs: 'Main differences at a glance', noDiffs: 'The plans compared show the same main cover amounts.',
+      d: {only: (n, cat, v, o) => n + ' includes ' + cat + (v ? ' (' + v + ')' : '') + '; ' + o + ' does not.',
+        missing: (n, cat, v, o) => n + ' does not include ' + cat + (v ? ' (' + o + ': ' + v + ')' : '') + '.',
+        diff: (n, cat, a, b, d, o) => cat + ': ' + b + ' in ' + n + ' vs ' + a + ' in ' + o + ' (' + d + ').',
+        premium: (n, a, b, d, o) => 'Premium: ' + b + ' a year in ' + n + ' vs ' + a + ' in ' + o + ' (' + d + ').',
+        term: (n, a, b, o) => 'Cover until: age ' + b + ' in ' + n + ' vs age ' + a + ' in ' + o + '.'},
+      p2title: 'Your total cover', p2sub: 'Today vs with the proposal', today: 'Today', todayB: 'Your policies today', inForce: n => n + ' in force', withP: 'With', change: 'change',
+      replaced: names => 'Assumes ' + names + ' is replaced by the proposal.', added: 'Assumes the proposal is added to the policies you have today.',
+      prem: 'Total premium / year', guide: g => 'Guideline ' + g, details: 'Plan details', medNote: 'Medical shows the highest single annual limit; medical cards do not simply add up.',
+      foot: 'This comparison is prepared from the policy documents, benefit illustrations and information you shared, for discussion only. Amounts are as shown in those documents and may change. It is not a policy contract, a quotation or a recommendation. Benefits are subject to each insurer\'s terms, conditions, exclusions and underwriting; please read the product disclosure sheet and benefit illustration of any proposal.',
+      replace: 'Thinking of replacing an existing policy? Switching may not be to your advantage: you may lose cash value and bonuses built up, pay more because of your age today, face new waiting periods and exclusions, and need to go through underwriting again. Keep the existing policy until the new one is approved.'}
+  };
+  function cmpFoot(agent, L, replaceNote) {
+    const who = agent && agent.name ? `Prepared by <b>${esc(agent.name)}</b>${agent.title ? ', ' + esc(agent.title) : ''}${agent.phone ? ' · ' + esc(agent.phone) : ''}` : 'Prepared by your REDEFINE adviser';
+    return `<footer class="rp-foot">${replaceNote ? `<p class="rp-repl">${esc(L.replace)}</p>` : ''}<div>${who}</div><p>${esc(L.foot)}</p></footer>`;
+  }
+  const colName = (col, i, L) => (col.proposal ? L.proposal : L.existing) + ' ' + String.fromCharCode(65 + i);
+  function buildCompare(c, ids, agent, PS, opts) {
+    opts = opts || {};
+    const L = CL[opts.lang] || CL.en;
+    const pols = ids.map(id => (c.policies || []).find(p => p.id === id)).filter(Boolean);
+    const cols = pols.map(PS.compareCol);
+    const props = cols.filter(x => x.proposal), mixed = props.length && cols.some(x => !x.proposal);
+    const replaceIds = opts.replace ? cols.filter(x => !x.proposal).map(x => x.id) : [];
+    const rmS = v => PS.rm(v, {short: true});
+    const page2 = props.length > 0;
+    const det = cmpDetails(c, pols, agent, PS, L, 0, 0, mixed, cols.length > 2 && !page2 ? 'x' : '').length;
+    const pages = 1 + (page2 ? 1 : 0) + det;
+
+    /* page 1: columns */
+    const head = cols.map((x, i) => `<th class="${x.proposal ? 'pro' : 'ex'}"><i style="background:${PS.insurerColor(x.p.insurer)}"></i><em>${esc(colName(x, i, L))}</em><b>${esc(x.p.insurer || '')}</b><span>${esc(x.p.productName || '')}</span></th>`).join('');
+    const numRow = (label, get, opt) => {
+      opt = opt || {};
+      const vals = cols.map(get);
+      if (vals.every(v => v == null) && !opt.always) return '';
+      const nums = vals.filter(v => typeof v === 'number');
+      const max = nums.length > 1 && new Set(nums).size > 1 ? Math.max(...nums) : null;
+      const anyHas = vals.some(v => v != null);
+      return `<tr><th>${esc(label)}</th>${vals.map((v, i) => {
+        let cls = '', html;
+        if (v == null) { cls = anyHas && !opt.plain ? 'no' : 'dash'; html = anyHas && !opt.plain ? L.notIncl : '—'; }
+        else if (v === 'unknown') { cls = 'unk'; html = L.notStated; }
+        else if (v === 'unlimited') html = L.unlimited;
+        else if (v === true) html = L.included;
+        else html = (opt.fmt || rmS)(v);
+        if (!opt.neutral && max != null && v === max) cls += ' hi';
+        const b = vals[0];
+        const delta = i > 0 && !opt.noDelta && typeof v === 'number' && typeof b === 'number' && v !== b ? `<small>${v > b ? '+' : '−'}${rmS(Math.abs(v - b))}</small>` : '';
+        return `<td class="${cls.trim()}">${delta}${esc(html)}</td>`;
+      }).join('')}</tr>`;
+    };
+    const sec = t => `<tr class="sec"><td colspan="${cols.length + 1}">${esc(t)}</td></tr>`;
+    const txtRow = (label, get) => { const vals = cols.map(get); if (vals.every(v => !v)) return ''; return `<tr><th>${esc(label)}</th>${vals.map(v => `<td class="${v ? 'txt' : 'dash'}">${v ? esc(v) : '—'}</td>`).join('')}</tr>`; };
+    const endTxt = e => !e ? '' : e.age ? L.age(e.age) : L.years(e.years);
+    const R = L.rows;
+    const body = sec(L.protection)
+      + ['death', 'tpd', 'ci', 'eci', 'accident'].map(id => numRow(R[id], x => x.v[id], {always: id !== 'accident'})).join('')
+      + sec(L.medical)
+      + numRow(R.medical, x => x.v.medical, {always: true}) + numRow(R.medLife, x => x.medLifetime) + numRow(R.room, x => x.roomBoard, {fmt: v => PS.rm(v)}) + numRow(R.hospital, x => x.v.hospital, {fmt: v => PS.rm(v)})
+      + numRow(R.waiver, x => x.waiver ? true : null, {always: true})
+      + sec(L.cost)
+      + txtRow(R.premium, x => x.premium != null ? PS.rm(x.premium) + ' ' + (L.freq[x.freq] || '') : '')
+      + numRow(R.annual, x => x.annual, {fmt: v => PS.rm(v), neutral: true})
+      + txtRow(R.pay, x => x.payYears ? L.years(x.payYears) : '')
+      + txtRow(R.end, x => endTxt(x.end))
+      + (cols.some(x => x.cash != null || x.bonus != null) ? sec(L.value) + numRow(R.cash, x => x.cash, {neutral: true, plain: true, noDelta: true}) + numRow(R.bonus, x => x.bonus, {neutral: true, plain: true, noDelta: true}) : '')
+      + txtRow(R.riders, x => x.riders.join(', '));
+    const diffAt0 = cols.length <= 2 ? 1 : 2;
+    const diffs = PS.keyDiffs(cols).map((d, i) => [d, i]).sort((a, b) => (cols[b[0].col].proposal ? 1 : 0) - (cols[a[0].col].proposal ? 1 : 0) || a[1] - b[1]).map(x => x[0]).slice(0, diffAt0 === 1 ? 5 : 8);   // differences involving a proposal first
+    const catName = id => id === 'medical' ? R.medical.split(' ·')[0] : id === 'waiver' ? R.waiver : R[id];
+    const dTxt = d => { const n = colName(cols[d.col], d.col, L), o = colName(cols[0], 0, L), sg = v => (v > 0 ? '+' : '−') + rmS(Math.abs(v));
+      if (d.kind === 'only') return L.d.only(n, catName(d.cat), d.val != null ? rmS(d.val) : '', o);
+      if (d.kind === 'missing') return L.d.missing(n, catName(d.cat), d.val != null ? rmS(d.val) : '', o);
+      if (d.kind === 'diff') return L.d.diff(n, catName(d.cat), rmS(d.a), rmS(d.b), sg(d.delta), o);
+      if (d.kind === 'premium') return L.d.premium(n, PS.rm(d.a), PS.rm(d.b), (d.delta > 0 ? '+' : '−') + PS.rm(Math.abs(d.delta)), o);
+      return L.d.term(n, d.a, d.b, o); };
+    const diffBox = `<section class="rp-diff"><h3>${esc(L.diffs)}</h3>${diffs.length ? `<ul>${diffs.map(d => `<li>${esc(dTxt(d))}</li>`).join('')}</ul>` : `<p>${esc(L.noDiffs)}</p>`}<p class="rp-key">${esc(L.medNote)}</p></section>`;
+    const diffAt = cols.length <= 2 ? 1 : page2 ? 2 : 3;   // 3-4 columns fill page 1, so the differences move to the next page
+    const p1 = `<div class="rp-page">${header(c, agent, L.title, 1, pages)}
+      <div class="rp-client small cmp"><span>${esc(L.prep)}</span><h1>${esc(c.client.name || '')}</h1><p>${esc(L.comparing(cols.length))}</p></div>
+      <table class="rp-cmp n${cols.length}"><thead><tr><th></th>${head}</tr></thead><tbody>${body}</tbody></table>
+      ${diffAt === 1 ? diffBox : ''}
+      ${cmpFoot(agent, L, mixed)}</div>`;
+
+    /* page 2: total cover today vs with each proposal */
+    let p2 = '';
+    if (page2) {
+      const W = PS.coverWith(c, props.map(x => x.p), replaceIds), sets = [W.today].concat(W.withEach.map(w => w.s));
+      const hd = [`<th class="ex"><em>${esc(L.today)}</em><b>${esc(L.todayB)}</b><span>${esc(L.inForce(W.today.policyCount))}</span></th>`].concat(W.withEach.map(w => {
+        const i = cols.findIndex(x => x.id === w.p.id); return `<th class="pro"><em>${esc(L.withP + ' ' + colName(cols[i], i, L))}</em><b>${esc(w.p.insurer || '')}</b><span>${esc(w.p.productName || '')}</span></th>`; })).join('');
+      const row = (label, get, fmt) => { const vals = sets.map(get), b = vals[0];
+        return `<tr><th>${esc(label)}</th>${vals.map((v, i) => `<td>${esc((fmt || rmS)(v || 0))}${i && v !== b ? `<small class="blk">${v > b ? '+' : '−'}${(fmt || rmS)(Math.abs(v - b))}</small>` : ''}</td>`).join('')}</tr>`; };
+      const gapRow = id => !W.today.gaps ? '' : `<tr class="gl"><th>${esc(L.guide(R[id] || id))}</th>${sets.map(s2 => { const g = s2.gaps.find(x => x.id === id); return `<td><span class="rp-mini"><i style="width:${g.pct}%"></i></span>${g.pct}%</td>`; }).join('')}</tr>`;
+      const names = cols.filter(x => replaceIds.includes(x.id)).map(x => (x.p.insurer || '') + ' ' + (x.p.productName || '')).join(', ');
+      p2 = `<div class="rp-page">${header(c, agent, L.title + ' · ' + L.p2title, 2, pages)}
+        <div class="rp-client small"><span>${esc(c.client.name || '')}</span><h2>${esc(L.p2title)}</h2><p>${esc(L.p2sub)}</p></div>
+        ${diffAt === 2 ? diffBox : ''}
+        <table class="rp-cmp tot n${sets.length}"><thead><tr><th></th>${hd}</tr></thead><tbody>
+          ${['death', 'tpd', 'ci', 'eci', 'accident'].map(id => row(R[id], s2 => s2.cats[id].total)).join('')}
+          ${row(R.medical, s2 => s2.medical.annual)}${row(R.hospital, s2 => s2.cats.hospital.total, v => PS.rm(v))}
+          ${row(L.prem, s2 => s2.premium.annual, v => PS.rm(v))}
+          ${gapRow('death')}${gapRow('ci')}
+        </tbody></table>
+        <p class="rp-key">${esc(replaceIds.length ? L.replaced(names) : L.added)} ${esc(L.medNote)}</p>
+        ${cmpFoot(agent, L, mixed)}</div>`;
+    }
+    return [p1].concat(p2 ? [p2] : [], cmpDetails(c, pols, agent, PS, L, 1 + (page2 ? 1 : 0) + 1, pages, mixed, diffAt === 3 ? diffBox : ''));
+  }
+  function cmpDetails(c, pols, agent, PS, L, startPage, pages, mixed, lead) {
+    const out = []; let cur = [], used = lead ? 7 : 0;
+    const cost = p => 3 + p.benefits.length * 1.15;
+    pols.forEach(p => { if (used + cost(p) > 28 && cur.length) { out.push(cur); cur = []; used = 0; } cur.push(p); used += cost(p); });
+    if (cur.length) out.push(cur);
+    return out.map((group, i) => `<div class="rp-page">${header(c, agent, L.title + ' · ' + L.details, startPage + i, pages)}
+      ${i === 0 ? `<div class="rp-client small"><span>${esc(c.client.name)}</span><h2>${esc(L.details)}</h2></div>${lead && lead !== 'x' ? lead : ''}` : ''}
+      ${group.map(p => policyCard(p, PS).replace('<section class="rp-pol', `<section data-role="${PS.isProposal(p) ? L.proposal : L.existing}" class="rp-pol${PS.isProposal(p) ? ' rp-prop' : ''}`)).join('')}
+      ${cmpFoot(agent, L, mixed)}</div>`);
   }
 
   /* render pages to a PDF Blob */
@@ -204,5 +333,5 @@
     return out;
   }
 
-  root.Report = {build, toPDF, buildFollowUp};
+  root.Report = {build, toPDF, buildFollowUp, buildCompare, CL};
 })(this);

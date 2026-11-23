@@ -152,3 +152,48 @@
 .fu-about h2{font-size:32px}
 .fu-card b{font-size:18px}
 .fu-card span{font-size:14px}
+
+/* ---------- comparison ---------- */
+.rp-cmp{width:100%;border-collapse:separate;border-spacing:0;font-size:11.5px;table-layout:fixed}
+.rp-cmp th,.rp-cmp td{padding:6px 8px;border-bottom:1px solid #ECE8DE;vertical-align:middle}
+.rp-cmp thead th{vertical-align:bottom;text-align:left;padding:10px 8px 9px;border-bottom:2px solid #14213D;position:relative}
+.rp-cmp thead th:first-child{width:170px}
+.rp-cmp.tot thead th:first-child{width:190px}
+.rp-cmp thead th i{position:absolute;left:8px;right:8px;top:0;height:4px;border-radius:2px}
+.rp-cmp thead th em{display:inline-block;font-style:normal;font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:2px 7px;border-radius:10px;margin:6px 0 5px;background:#E8EDF5;color:#1F3A68}
+.rp-cmp thead th.pro em{background:#F7EBCF;color:#8A6416}
+.rp-cmp thead th b{display:block;font-size:12.5px;color:#14213D;line-height:1.2}
+.rp-cmp thead th span{display:block;font-size:10px;color:#7A8090;font-weight:400;line-height:1.3;margin-top:2px}
+.rp-cmp thead th.pro{background:#FFFBF1}
+.rp-cmp tbody th{text-align:left;font-weight:500;color:#3A4152;font-size:11px}
+.rp-cmp tbody td{text-align:right;color:#14213D;font-weight:600;font-size:12px}
+.rp-cmp tbody td small{display:block;font-size:9.5px;font-weight:500;color:#7A8090}
+.rp-cmp tbody td.hi{background:#FDF4DC;box-shadow:inset 3px 0 0 #D9A23B}
+.rp-cmp tbody td.no{color:#B5452F;font-weight:500;font-size:10.5px}
+.rp-cmp tbody td.unk{color:#D9A23B;font-weight:500;font-size:10.5px}
+.rp-cmp tbody td.dash{color:#B9BEC8;font-weight:400}
+.rp-cmp tbody td.txt{font-weight:500;font-size:10.5px;line-height:1.3;white-space:normal}
+.rp-cmp tr.sec td{text-align:left;font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:#B08A2E;font-weight:700;padding:10px 8px 4px;border-bottom:1px solid #E4E1D8;background:none}
+.rp-cmp.tot tbody td{font-size:13px}
+.rp-cmp tr.gl td{font-size:11px;font-weight:600}
+.rp-mini{display:inline-block;width:46px;height:6px;border-radius:3px;background:#ECE8DE;margin-right:6px;vertical-align:middle;overflow:hidden}
+.rp-mini i{display:block;height:100%;background:#1F3A68}
+.rp-diff{margin-top:14px;padding:12px 16px;border-radius:14px;background:#F4F1E8}
+.rp-diff h3{margin:0 0 6px;font:600 15px/1.2 Fraunces,Georgia,serif;color:#14213D}
+.rp-diff ul{margin:0;padding-left:18px}
+.rp-diff li{font-size:11.5px;line-height:1.45;color:#2A3142;margin:2px 0}
+.rp-diff p{margin:0;font-size:11.5px}
+.rp-diff .rp-key{margin-top:6px}
+.rp-repl{margin:0 0 6px!important;padding:6px 9px;border-radius:8px;background:#FBF3E4;color:#7A4F12!important;font-size:9px!important}
+.rp-pol.rp-prop{border-color:#E9D3A0;background:#FFFCF4}
+.rp-pol[data-role]::before{content:attr(data-role);float:right;font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:2px 7px;border-radius:10px;background:#E8EDF5;color:#1F3A68}
+.rp-pol.rp-prop::before{background:#F7EBCF;color:#8A6416}
+.rp-client.small.cmp{margin:14px 0 10px}
+.rp-client.cmp h1{font-size:30px;margin:2px 0 2px}
+.rp-cmp th,.rp-cmp td{padding:4.5px 8px}
+.rp-cmp tbody td small{display:inline;margin-right:7px}
+.rp-cmp tbody td small.blk{display:block;margin:0}
+.rp-cmp tr.sec td{padding:8px 8px 3px}
+.rp-cmp thead th{padding:8px 8px 7px}
+.rp-diff{margin-top:10px;padding:10px 14px}
+.rp-diff li{font-size:11px;line-height:1.4;margin:1px 0}
