@@ -1018,6 +1018,7 @@
     if (rec.step === 'review' && rec.draft) return reviewScreen(c, back, stepBar, discard);
     if (rec.step === 'transcript') {
       app.innerHTML = bar('Record a meeting', back, discard) + `<div class="wrap">${stepBar}
+        <div id="vPend"></div>
         <div class="card"><h2>${c ? 'Meeting with ' + esc(c.client.name) : 'Your note'}</h2>
           <p class="muted" style="margin-bottom:8px">Fix any wrong names or numbers. Hokkien and Cantonese words may be spelled oddly; the AI understands them, but numbers must be right.</p>
           <div class="f"><textarea id="tx" rows="10">${esc(rec.transcript)}</textarea></div>
@@ -1030,12 +1031,14 @@
       wireCommon(c);
       $('#tx').addEventListener('input', () => { rec.transcript = $('#tx').value; saveRec(); });
       $('#more').onclick = () => { rec.step = 'capture'; saveRec(); route(); };
+      pendingVoiceBanner(c);
       $('#draft').onclick = () => draftWithAI(c);
       return;
     }
     /* capture */
     app.innerHTML = bar('Record a meeting', back, rec.transcript ? discard : '') + `<div class="wrap">${stepBar}
       ${c ? '' : `<div class="card"><h2>Which client?</h2><div class="f">${rec.nameHint ? `<p style="margin-bottom:8px">From 定联: <b>${esc(rec.nameHint)}</b> (new client). If they're already in your farm, pick them below instead.</p>` : ''}<select id="pickC"><option value="">${rec.nameHint ? 'New client: ' + esc(rec.nameHint) : 'New client (the app takes the name from what you say)'}</option>${cases.filter(x => !x.sample).sort((a, b) => (b.updated || '').localeCompare(a.updated || '')).map(x => `<option value="${x.id}">${esc(x.client.name)}${x.client.nickname ? ' (' + esc(x.client.nickname) + ')' : ''}</option>`).join('')}</select></div></div>`}
+      <div id="vPend"></div>
       <div class="card mic-card">
         <p class="muted">Tell it like you'd tell your leader. Mix Mandarin, Hokkien, Cantonese, English and Malay freely.</p>
         <button class="mic" id="mic" aria-label="Start recording"><span></span></button>
@@ -1054,6 +1057,7 @@
     wireCommon(c);
     const pick = $('#pickC'); if (pick) pick.onchange = () => { if (pick.value) { const id = pick.value; rec.caseId = id; saveRec(); location.hash = '#/record/' + id; } };
     $('#mic').onclick = () => (mediaRec ? stopMic() : startMic(c));
+    pendingVoiceBanner(c);
     $('#guideQ').addEventListener('toggle', e => save('pspt.guideClosed', !e.target.open));
     $('#useTyped').onclick = () => { const t = $('#typed').value.trim(); if (!t) return; rec.transcript = (rec.transcript ? rec.transcript + '\n' : '') + t; rec.step = 'transcript'; saveRec(); route(); };
     const tt = $('#toTx'); if (tt) tt.onclick = () => { rec.step = 'transcript'; saveRec(); route(); };
@@ -1085,50 +1089,73 @@
   }
 
   /* ---------- microphone ----------
-     Long notes are recorded in pieces of about 90 seconds. Each piece is a complete audio file (no streaming
-     fragments) that is turned into text on its own; the texts are joined in order. Sending one long file made the
-     speech-to-text read only its start (a 5-minute note came back as one sentence). */
+     Long notes are recorded in pieces of about 90 seconds, one after another (never two recorders at once: iPhone
+     breaks both). Each piece is a whole audio file turned into text on its own, then joined in order.
+     A recording is never thrown away: the pieces are kept on the device until every one is text, a failed piece is
+     tried 3 times (a dropped connection on mobile data is the usual cause), and "Try again" re-sends only the pieces
+     still missing. If the phone stops the mic by itself (screen lock, a call), what was recorded so far is kept. */
   const SEG_MS = 90000, MAX_REC_S = 600;
   const recType = () => ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || '';
   function segRecorder(stream, segMs) {
     const type = recType(), parts = [];
-    let cur = null, n = 0, open = 0, stopping = false, done;
+    let cur = null, n = 0, stopping = false, finishedOnce = false, done, timer = null;
     const finished = new Promise(r => { done = r; });
+    const finish = () => { if (finishedOnce) return; finishedOnce = true; clearTimeout(timer); stream.getTracks().forEach(t => t.stop()); done(parts.filter(Boolean)); };
     const startOne = () => {
       const i = n++, chunks = [];
-      const r = new MediaRecorder(stream, type ? {mimeType: type, audioBitsPerSecond: 32000} : undefined);
+      let r;
+      try { r = new MediaRecorder(stream, type ? {mimeType: type, audioBitsPerSecond: 32000} : undefined); r.start(); }   // no timeslice: each piece ends as one whole file
+      catch (e) { return finish(); }
       r.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+      r.onerror = () => { stopping = true; };
       r.onstop = () => {
         const b = new Blob(chunks, {type: (r.mimeType || type || 'audio/mp4').split(';')[0]});
         if (b.size > 1500) parts[i] = b;
-        if (--open === 0 && stopping) { stream.getTracks().forEach(t => t.stop()); done(parts.filter(Boolean)); }
+        const live = stream.getAudioTracks().some(t => t.readyState === 'live');
+        if (stopping || !live) finish(); else { startOne(); timer = setTimeout(roll, segMs); }   // next piece starts right after this one is closed
       };
-      r.start(); open++; cur = r;   // no timeslice: each piece ends as one whole file
+      cur = r;
     };
-    startOne();
-    const timer = setInterval(() => { if (stopping) return; const old = cur; startOne(); old.stop(); }, segMs);   // the next piece starts before the old one stops, so no words fall in a gap
+    const roll = () => { if (!stopping && cur && cur.state !== 'inactive') cur.stop(); };
+    stream.getAudioTracks().forEach(t => { t.onended = () => { stopping = true; if (cur && cur.state !== 'inactive') cur.stop(); else finish(); }; });   // the phone took the mic away
+    startOne(); timer = setTimeout(roll, segMs);
     return {
       finished,
-      stop() { if (stopping) return; stopping = true; clearInterval(timer); if (cur.state !== 'inactive') cur.stop(); },
+      stop() { if (stopping) return; stopping = true; clearTimeout(timer); if (cur && cur.state !== 'inactive') cur.stop(); else finish(); },
       get active() { return !stopping; }
     };
   }
-  /* pieces -> text in order; a failed piece is tried once more and the text already heard is kept */
-  async function partsToText(parts, hint, onProgress) {
-    const out = []; let failed = 0, lastErr = null;
-    for (let i = 0; i < parts.length; i++) {
-      onProgress && onProgress(i + 1, parts.length);
-      const prev = out.join(' ').slice(-200);
-      let text = null;
-      for (let t = 0; t < 2 && text == null; t++) {
-        try { const r = await post({op: 'transcribe', audio: await blobB64(parts[i]), mime: parts[i].type, hint: (hint + (prev ? ' Earlier in this note: ' + prev : '')).slice(0, 900)}); text = String(r.text || '').trim(); }
-        catch (e) { lastErr = e; if (['invalid_request', 'no_api_key', 'bad_api_key', 'no_credit', 'daily_limit', 'unauthorized', 'offline'].includes(e.code)) throw e; }
+
+  /* recordings waiting to become text, kept on this device (IndexedDB) until they are */
+  const VoiceStore = (() => {
+    let dbp = null;
+    const db = () => dbp || (dbp = new Promise((ok, no) => { const r = indexedDB.open('pspt-voice', 1); r.onupgradeneeded = () => r.result.createObjectStore('v', {keyPath: 'key'}); r.onsuccess = () => ok(r.result); r.onerror = () => { dbp = null; no(r.error); }; }));
+    const run = async (mode, fn) => { const d = await db(); return new Promise((ok, no) => { const t = d.transaction('v', mode), q = fn(t.objectStore('v')); t.oncomplete = () => ok(q && q.result); t.onerror = () => no(t.error); }); };
+    return {put: v => run('readwrite', s => s.put(v)).catch(() => null), get: k => run('readonly', s => s.get(k)).catch(() => null), del: k => run('readwrite', s => s.delete(k)).catch(() => null)};
+  })();
+  const NO_RETRY = ['invalid_request', 'no_api_key', 'bad_api_key', 'no_credit', 'daily_limit', 'unauthorized', 'audio_too_large'];
+  const VOICE_ERR = {offline: 'The connection dropped while sending the recording.', upstream_error: 'The team server did not answer properly.', rate_limited: 'The speech-to-text service was busy.',
+    audio_rejected: 'The speech-to-text service could not open this recording.', bad_model: 'The speech-to-text model is not available.'};
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  /* turn the pieces still missing into text: up to 3 tries each. job = {parts: [Blob], texts: [string|null]} */
+  async function convertJob(job, hint, onProgress) {
+    let lastErr = null;
+    const todo = job.parts.map((_, i) => i).filter(i => job.texts[i] == null);
+    for (let k = 0; k < todo.length; k++) {
+      const i = todo[k];
+      onProgress && onProgress(k + 1, todo.length, job.parts.length);
+      const prev = job.texts.slice(0, i).filter(Boolean).join(' ').slice(-200);
+      for (let t = 0; t < 3 && job.texts[i] == null; t++) {
+        if (t) await wait(t === 1 ? 1500 : 4000);
+        try { const r = await post({op: 'transcribe', audio: await blobB64(job.parts[i]), mime: job.parts[i].type, hint: (hint + (prev ? ' Earlier in this note: ' + prev : '')).slice(0, 900)}); job.texts[i] = String(r.text || '').trim(); }
+        catch (e) { lastErr = e; if (NO_RETRY.includes(e.code)) return {err: e}; }
       }
-      if (text == null) { failed++; out.push(`[part ${i + 1} of ${parts.length} could not be converted]`); } else if (text) out.push(text);
     }
-    if (failed === parts.length) throw lastErr || {code: 'upstream_error'};
-    return {text: out.join('\n').trim(), failed};
+    const missing = job.texts.filter(x => x == null).length;
+    return {missing, err: missing ? lastErr || {code: 'upstream_error'} : null};
   }
+  const jobText = job => job.texts.map((x, i) => x == null ? `[part ${i + 1} of ${job.parts.length} not converted yet]` : x).filter(Boolean).join('\n').trim();
+  const voiceMsg = e => e.code === 'invalid_request' ? 'Voice needs the latest team server update.' : AI_ERR[e.code] && e.code !== 'offline' ? AI_ERR[e.code] : (VOICE_ERR[e.code] || 'Something went wrong') + ' (' + (e.code || 'error') + ')';
 
   async function startMic(c) {
     if (!navigator.mediaDevices || !window.MediaRecorder) return toast('This browser cannot record. Use "Type instead" with your keyboard mic.');
@@ -1143,31 +1170,59 @@
       if (el) el.textContent = `● ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} · tap to stop${s >= MAX_REC_S - 60 ? ' · stops at 10:00' : ''}`;
       if (s >= MAX_REC_S) stopMic();
     }, 500);
-    const parts = await sr.finished;
+    const parts = await sr.finished, secs = Math.round((Date.now() - t0) / 1000);
     clearInterval(recTimer); mediaRec = null;
     if (!parts.length) { toast('Too short. Try again.'); return route(); }
-    await transcribeParts(parts, c);
+    const job = {key: 'pending', parts, texts: parts.map(() => null), caseId: c ? c.id : '', created: Date.now(), secs};
+    await VoiceStore.put(job);   // kept until it is all text
+    await transcribeJob(job, c);
   }
   function stopMic() { if (mediaRec && mediaRec.active) mediaRec.stop(); }
 
   const blobB64 = blob => new Promise((ok, bad) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.onerror = bad; r.readAsDataURL(blob); });
-  async function transcribeParts(parts, c) {
-    if (!session() && !(await signIn())) { toast('Sign in to turn voice into text, or use "Type instead".'); return route(); }
-    const box = sheet(`<h3>Turning your voice into text…</h3><div class="spin"></div><p style="text-align:center" id="trP">${parts.length > 1 ? `Part 1 of ${parts.length}` : 'Usually 5–20 seconds.'}</p>`);
+  async function transcribeJob(job, c) {
+    if (!session() && !(await signIn())) { toast('Sign in to turn voice into text. Your recording is kept.'); return route(); }
+    const box = sheet(`<h3>Turning your voice into text…</h3><div class="spin"></div><p style="text-align:center" id="trP">${job.parts.length > 1 ? `Part 1 of ${job.parts.length}` : 'Usually 5–20 seconds.'}</p><p class="muted" style="text-align:center">Keep this screen open. The recording is saved on this phone until it is text.</p>`);
     $('#sheet').dataset.lock = '1';
-    try {
-      const name = c ? c.client.name + (c.client.nickname ? ' / ' + c.client.nickname : '') : '';
-      const r = await partsToText(parts, FU.hintFor(name), (i, n) => { const p = $('#trP', box); if (p && n > 1) p.textContent = `Part ${i} of ${n} · about 10–20 seconds each`; });
-      const text = r.text;
-      closeSheet();
-      if (!text) { toast('Nothing was heard. Try again closer to the phone.'); return route(); }
-      rec.transcript = (rec.transcript ? rec.transcript + '\n' : '') + text; rec.step = 'transcript'; saveRec(); route();
-      if (r.failed) toast(`${r.failed} part${r.failed > 1 ? 's' : ''} could not be converted (marked in the text). Add it with "Add more by voice" or type it.`);
-    } catch (e) {
-      closeSheet();
-      const msg = e.code === 'invalid_request' ? 'Voice needs the latest team server update. For now, use "Type instead" with your keyboard mic.' : AI_ERR[e.code] || 'Could not turn the voice into text (' + (e.code || 'error') + '). Try again, or use "Type instead".';
-      sheet(`<h3>Voice not converted</h3><p>${esc(msg)}</p><button class="btn block" data-close>OK</button>`);
-    }
+    const name = c ? c.client.name + (c.client.nickname ? ' / ' + c.client.nickname : '') : '';
+    const r = await convertJob(job, FU.hintFor(name), (k, n, all) => { const p = $('#trP', box); if (p && all > 1) p.textContent = n < all ? `Trying again: part ${k} of ${n} still missing` : `Part ${k} of ${n} · about 10–20 seconds each`; });
+    await VoiceStore.put(job);
+    if (!r.err) { useJob(job); return; }
+    /* something is still missing: nothing is lost, offer to try again */
+    const got = job.texts.filter(x => x != null).length;
+    const el = sheet(`<h3>Voice not converted${got ? ' yet' : ''}</h3>
+      <p>${esc(voiceMsg(r.err))}</p>
+      <div class="checks ok-box">Your recording is <b>saved on this phone</b>${got ? ` and ${got} of ${job.parts.length} parts are already text` : ''}. You don't need to speak again.</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${NO_RETRY.includes(r.err.code) ? '' : '<button class="btn primary block" id="vRetry">Try again</button>'}
+        ${got ? '<button class="btn block" id="vPart">Use the text so far</button>' : ''}
+        <a class="btn block" id="vSave" download="On Field voice note.${(job.parts[0].type.split('/')[1] || 'webm').replace('mp4', 'm4a')}">Save the recording file</a>
+        <button class="btn ghost block" id="vLater">Later</button>
+        <button class="tinylink" id="vDrop">Discard this recording</button></div>`);
+    $('#sheet').dataset.lock = '1';
+    const url = URL.createObjectURL(new Blob(job.parts, {type: job.parts[0].type})); $('#vSave', el).href = url;
+    const rt = $('#vRetry', el); if (rt) rt.onclick = () => transcribeJob(job, c);
+    const vp = $('#vPart', el); if (vp) vp.onclick = () => useJob(job, true);
+    $('#vLater', el).onclick = () => { closeSheet(); toast('Saved. Open "Record a meeting" to try again.'); route(); };
+    $('#vDrop', el).onclick = async () => { if (await confirmBox('Discard this recording?', 'The parts not yet turned into text are lost. You would need to speak them again.', 'Discard', true)) { await VoiceStore.del('pending'); toast('Discarded'); route(); } else transcribeJob(job, c); };
+  }
+  /* put the text in the note; a partly converted recording stays saved so the rest can be tried later */
+  async function useJob(job, partial) {
+    const text = jobText(job);
+    closeSheet();
+    if (!partial) await VoiceStore.del('pending');
+    if (!text.replace(/\[part .*?\]/g, '').trim()) { if (!partial) toast('Nothing was heard. Try again closer to the phone.'); return route(); }
+    rec = rec || {step: 'speak'};
+    rec.transcript = (rec.transcript ? rec.transcript + '\n' : '') + text; rec.step = 'transcript'; saveRec(); route();
+    if (partial) { await VoiceStore.del('pending'); toast('Text so far added. Type or speak the missing part.'); }
+  }
+  /* on the record screen: a recording that was not converted yet */
+  async function pendingVoiceBanner(c) {
+    const job = await VoiceStore.get('pending'); const host = $('#vPend');
+    if (!job || !host) return;
+    const left = job.texts.filter(x => x == null).length, mins = Math.round((job.secs || 0) / 60);
+    host.innerHTML = `<div class="checks"><b>🎙 A recording${mins ? ` (about ${mins} min)` : ''} is saved but ${left === job.parts.length ? 'not turned into text yet' : `${left} part${left > 1 ? 's are' : ' is'} not text yet`}.</b> <button type="button" class="btn sm" id="vGo">Try again</button></div>`;
+    $('#vGo', host).onclick = () => transcribeJob(job, c || (job.caseId && getCase(job.caseId)) || null);
   }
 
   /* ---------- AI draft ---------- */
@@ -1566,10 +1621,14 @@
     const parts = await sr.finished;
     clearInterval(tick); miniRec = null; btn.textContent = '🎙 Speak into the box';
     if (!parts.length) { label.textContent = 'Too short.'; return; }
-    try {
-      const r = await partsToText(parts, FU.HINT, (i, n) => { label.textContent = n > 1 ? `Turning voice into text… part ${i} of ${n}` : 'Turning voice into text…'; });
-      label.textContent = r.failed ? 'Some of it could not be converted (marked).' : ''; if (r.text) onText(r.text);
-    } catch (e) { label.textContent = e.code === 'invalid_request' ? 'Voice needs the team server update.' : 'Could not convert. Try again or type.'; }
+    const job = {parts, texts: parts.map(() => null)};
+    const go = async () => {
+      const r = await convertJob(job, FU.HINT, (k, n, all) => { label.textContent = all > 1 ? `Turning voice into text… part ${k} of ${n}` : 'Turning voice into text…'; });
+      if (!r.err) { label.textContent = ''; const t = jobText(job); if (t) onText(t); return; }
+      label.innerHTML = `${esc(voiceMsg(r.err))} Your recording is kept. ${NO_RETRY.includes(r.err.code) ? '' : '<button type="button" class="tinylink" data-vr>Try again</button>'}`;
+      const b = label.querySelector('[data-vr]'); if (b) b.onclick = go;
+    };
+    go();
   }
 
   /* leader view: numbers only, from the team server */
