@@ -1,6 +1,6 @@
 // Network first and always revalidated, so phones get updates as soon as they are online; falls back to the cache offline.
-const CACHE = 'onfield-v9';
-const FILES = ['./', 'index.html', 'style.css', 'report.css', 'config.js', 'logic.js', 'demo.js', 'concepts.js', 'followup.js', 'report.js', 'app.js', 'logo.png',
+const CACHE = 'onfield-v10';
+const FILES = ['./', 'index.html', 'style.css', 'report.css', 'config.js', 'rl-team.js', 'logic.js', 'demo.js', 'concepts.js', 'followup.js', 'report.js', 'app.js', 'logo.png',
   'vendor/jspdf.umd.min.js', 'vendor/html2canvas.min.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 self.addEventListener('install', e => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); });
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));

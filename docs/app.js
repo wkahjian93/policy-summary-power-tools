@@ -246,7 +246,15 @@
     if (j.error) throw {code: j.error};
     return j;
   }
+  // REDEFINE Login (phone + email + PIN, the same on every REDEFINE app). The owner can still use the owner code.
   function signIn() {
+    if (window.RLTeam && CFG.loginApi) return RLTeam.signIn({api: CFG.api, loginApi: CFG.loginApi, appName: 'On Field', cancelable: true}).then(r => {
+      if (r.session) { save('pspt.session', r.session); if (!settings.name) { settings.name = r.session.name; save('pspt.settings', settings); } return true; }
+      return r.old ? oldSignIn() : false;
+    });
+    return oldSignIn();
+  }
+  function oldSignIn() {
     return new Promise(done => {
       const el = sheet(`<h3>Sign in once</h3><p>Reading photos/PDFs and syncing use the REDEFINE team server. Enter your name and the team code (the same one as Form Filler). You stay signed in on this device. Keying in works without signing in.</p>
         <div class="f"><label for="gName">Your name</label><input id="gName" autocomplete="name" value="${esc(settings.name || (load('pspt.session', null) || load('rff.session', null) || {}).name || (syncCfg || {}).name || '')}"></div>
@@ -1925,8 +1933,8 @@
     const prNow = $('#prNow', el); if (prNow) prNow.onclick = () => { closeSheet(); prPull(true); };
     const prOff = $('#prOff', el); if (prOff) prOff.onclick = async () => { if (await confirmBox('Disconnect REDEFINE Prospecting?', 'New calls and appointments will stop coming in. Quick logs already here stay.', 'Disconnect', true)) { settings.prCode = ''; settings.prSince = ''; saveSettings(); closeSheet(); toast('Disconnected'); } };
     const o = $('#out', el); if (o) o.onclick = async () => {
-      if (!(await confirmBox('Sign out of this device?', 'You will need the team code again to read photos and PDFs' + (syncCfg ? ', and sync will pause until you sign back in' : '') + '. Clients on this device stay. You normally never need to sign out.', 'Sign out', true))) return;
-      localStorage.setItem('pspt.session', 'null'); toast('Signed out'); route();
+      if (!(await confirmBox('Sign out of this device?', 'You will need to sign in again to read photos and PDFs' + (syncCfg ? ', and sync will pause until you sign back in' : '') + '. Clients on this device stay. You normally never need to sign out.', 'Sign out', true))) return;
+      if (window.RLTeam) RLTeam.signOut(CFG.api, session(), CFG.loginApi); localStorage.setItem('pspt.session', 'null'); toast('Signed out'); route();
     };
     const f = $('#forget', el); if (f) f.onclick = async () => { if (await confirmBox('Forget remembered names?', 'The app will go back to its built-in reading of benefit names.', 'Forget')) { learned = {}; saveLearned(); toast('Done'); } };
   }
